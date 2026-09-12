@@ -12,6 +12,30 @@ uv run python -m ktax examples/salaried_33.json --json   # 기계용 출력
 uv run python -m ktax.server                             # MCP stdio 서버
 ```
 
+## 에이전트 표면
+
+이 도구들의 사용자는 사람이 아니라 에이전트다. 그래서 설계 기준이 다르다 —
+계산이 맞는가뿐 아니라, 사전 지식 없는 에이전트가 도구 목록만 보고 올바른
+다음 수를 둘 수 있는가.
+
+**넣지 않은 필드는 '모름'이다.** 가장 중요한 규칙이다. 예전에는 아무것도
+표시하지 않으면 모든 값을 안다고 보았는데, 그러면 채우지 않은 필드가 0으로
+읽혀 "무주택 세대주가 아니라 공제 대상이 아닙니다" 같은 단정이 나갔다.
+에이전트는 그것을 사실로 사용자에게 전달한다 — 물어본 적도 없는 사실을.
+지금은 안전한 쪽이 기본이고, 확인해서 0원이면 `0` 을 명시적으로 넣는다.
+
+**에러는 다음 수를 알려준다.** `Profile.__init__() got an unexpected keyword
+argument 'salary'` 같은 메시지로는 에이전트가 회복할 수 없다. 유효한 이름을
+찾는 법과 가까운 후보를 함께 돌려준다.
+
+**물어볼 문장까지 준다.** `indeterminate` 의 각 항목에는 무엇이 없는지뿐 아니라
+어디서 가져올 수 있는지(`sources`)와 사용자에게 물을 문장(`question`)이 담긴다.
+`user_only` 가 true 면 외부 자료로는 알 수 없다는 뜻이다.
+
+쓰는 순서는 서버 `instructions` 에 담겨 있다: `describe_profile_fields` →
+(`collect_profile`) → `recommend_actions` → `check_thresholds` →
+다음 달에 `compare_snapshots`.
+
 ## 직접 확인해 보기
 
 `examples/*.json` 을 고쳐서 다시 돌리면 된다. 숫자만으로는 검산이 안 되므로

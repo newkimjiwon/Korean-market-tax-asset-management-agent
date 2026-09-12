@@ -30,6 +30,7 @@ from ktax.models import (
 from ktax.catalog import catalog_keys, discover_actions as _discover
 from ktax.sources import (
     FieldSource,
+    label_of,
     from_hometax,
     from_source,
     how_to_fill,
@@ -46,14 +47,92 @@ from ktax.scoring import (
 )
 from ktax.tax import estimate_tax, simulate_isa_contribution, simulate_pension_contribution
 
-server = MCPServer("ktax")
+_INSTRUCTIONS = """한국 세무·자산관리 계산 도구.
+
+쓰는 순서
+  1. describe_profile_fields 로 어떤 값이 필요한지 본다.
+  2. 값을 모은다. 자동 수집 자료가 있으면 collect_profile 로 합치고,
+     없으면 사용자에게 물어 직접 프로필 dict 를 만든다.
+  3. recommend_actions 로 할 수 있는 일을 찾는다.
+  4. check_thresholds 로 경계에 다가선 것이 있는지 본다.
+  5. 다음 달에 다시 볼 때는 compare_snapshots 로 무엇이 달라졌는지 확인한다.
+
+반드시 지킬 것
+  · 프로필에 넣지 않은 필드는 '모름'으로 처리된다. 확인해서 0원이면
+    0 을 명시적으로 넣어라. 비워두면 '자격 미달'이 아니라 '판단 불가'가 된다.
+  · indeterminate 항목을 '공제 대상이 아닙니다'라고 전하지 마라. 자격이
+    없는 것이 아니라 우리가 아직 모르는 것이다. how_to_fill 이 무엇을
+    물어야 하는지 알려준다.
+  · 모든 계산 결과의 rationale 을 근거로 삼아 설명하라. applied_rules 는
+    적용한 규칙, assumptions 는 가정, warnings 는 신뢰도 경고다.
+  · 절세 효과 계산만 한다. 어떤 상품에 투자하라는 판단은 이 도구의 범위가
+    아니다.
+"""
+
+server = MCPServer("ktax", instructions=_INSTRUCTIONS)
 
 
 def _profile(data: dict[str, Any]) -> Profile:
+    """dict 를 Profile 로. 실패하면 에이전트가 회복할 수 있게 알려준다.
+
+    Profile(**data) 를 그대로 부르면 TypeError 가 파이썬 내부를 노출할 뿐
+    무엇이 유효한 이름인지 알려주지 않는다. 에이전트는 그 메시지로는
+    다음 수를 두지 못한다.
+    """
+    from dataclasses import fields as dc_fields
+    from difflib import get_close_matches
+
+    valid = {f.name for f in dc_fields(Profile)}
     data = dict(data)
+
+    unknown = sorted(set(data) - valid)
+    if unknown:
+        hints = []
+        for name in unknown:
+            close = get_close_matches(name, valid, n=2, cutoff=0.6)
+            hints.append(f"{name}" + (f" (혹시 {' 또는 '.join(close)}?)" if close else ""))
+        raise ValueError(
+            f"프로필에 없는 필드: {', '.join(hints)}. "
+            f"describe_profile_fields 로 전체 필드 이름과 뜻을 확인하세요."
+        )
+
+    if "age" not in data:
+        raise ValueError(
+            "age 는 필수입니다. 나이를 모르면 액션의 지평(몇 년간 효과가 "
+            "이어지는지)을 계산할 수 없습니다. 사용자에게 나이를 물어보세요."
+        )
+
     if "filing_type" in data:
-        data["filing_type"] = FilingType(data["filing_type"])
+        try:
+            data["filing_type"] = FilingType(data["filing_type"])
+        except ValueError:
+            raise ValueError(
+                f"filing_type 은 'earned'(근로소득, 연말정산) 또는 "
+                f"'comprehensive'(종합소득, 5월 신고) 중 하나입니다."
+            ) from None
+
     return Profile(**data)
+
+
+def _resolve_known(
+    profile: dict[str, Any],
+    known_fields: list[str] | None,
+    assume_complete: bool,
+) -> frozenset[str] | None:
+    """무엇을 안다고 볼 것인가.
+
+    기본값은 '전달된 키가 곧 아는 것'이다. 예전에는 아무것도 주지 않으면
+    모든 필드를 안다고 보았는데, 그러면 채우지 않은 필드가 0으로 읽혀
+    '무주택 세대주가 아니라 공제 대상이 아닙니다' 같은 단정이 나갔다.
+    물어본 적도 없는 사실을 사용자에게 전달하게 되는 셈이다.
+
+    안전한 쪽이 기본이어야 한다.
+    """
+    if assume_complete:
+        return None
+    if known_fields is not None:
+        return frozenset(known_fields)
+    return frozenset(profile)
 
 
 def _rationale_dict(r: Rationale) -> dict[str, Any]:
@@ -158,6 +237,35 @@ def simulate_isa(
 # --------------------------------------------------------------------------
 
 @server.tool()
+def describe_profile_fields(only_missing_from: dict[str, Any] | None = None) -> dict[str, Any]:
+    """프로필 필드의 전체 목록과 각각의 뜻·출처·질문 문장.
+
+    다른 도구를 부르기 전에 이것부터 보면 필드 이름을 추측하지 않아도 된다.
+    `only_missing_from` 에 지금까지 모은 프로필을 주면 아직 없는 것만 추린다.
+
+    각 항목의 `user_only` 가 true 면 외부 자료로는 알 수 없어 반드시
+    사용자에게 물어야 한다. false 면 `sources` 에 적힌 곳에서 가져올 수 있다.
+    """
+    from dataclasses import fields as dc_fields
+
+    names = [f.name for f in dc_fields(Profile)]
+    if only_missing_from is not None:
+        names = [n for n in names if n not in only_missing_from]
+
+    return {
+        "required": ["age"],
+        "fields": [
+            {**how_to_fill(name), "label": label_of(name)} for name in names
+        ],
+        "note": (
+            "프로필에 넣지 않은 필드는 '모름'으로 처리된다. 확인해서 0원이면 "
+            "0 을 명시적으로 넣어라."
+        ),
+    }
+
+
+
+@server.tool()
 def collect_profile(records: list[dict[str, Any]]) -> dict[str, Any]:
     """여러 원천의 값을 합쳐 프로필을 만든다.
 
@@ -216,6 +324,7 @@ def recommend_actions(
     year: int,
     view: str = "value",
     known_fields: list[str] | None = None,
+    assume_complete: bool = False,
 ) -> dict[str, Any]:
     """이 사람이 지금 할 수 있는 절세 액션을 찾아 순위를 매긴다.
 
@@ -240,7 +349,7 @@ def recommend_actions(
     """
     p = _profile(profile)
     discovery = _discover(
-        p, year, known=frozenset(known_fields) if known_fields is not None else None
+        p, year, known=_resolve_known(profile, known_fields, assume_complete)
     )
     scored = score_actions(discovery.applicable, p)
 
@@ -332,14 +441,26 @@ def rank_actions(
 # --------------------------------------------------------------------------
 
 @server.tool()
-def check_thresholds(profile: dict[str, Any], year: int) -> list[dict[str, Any]]:
+def check_thresholds(profile: dict[str, Any], year: int) -> dict[str, Any]:
     """경계선까지 남은 여유를 계산한다.
 
     금융소득 종합과세 2천만원, 연금계좌 한도, 세율 구간 경계, ISA 한도.
     사람이 상시 추적하지 못하는 것들이다. 알림을 쏠지 말지는 호출자가 정한다 —
     severity 가 info 면 조용히 있는 것이 맞다.
+
+    `assumed_zero` 에는 프로필에 없어서 0으로 간주한 필드가 담긴다. 그 값이
+    실제로 0인지 아직 모르는지 구분되지 않으므로, 여기 이름이 올라온 항목의
+    신호는 사용자에게 단정적으로 전하면 안 된다.
     """
-    return [s.to_dict() for s in evaluate_thresholds(_profile(profile), year)]
+    p = _profile(profile)
+    inputs = {
+        "financial_income", "pension_savings_contributed", "irp_contributed",
+        "isa_contributed_this_year", "earned_income", "income_deductions",
+    }
+    return {
+        "signals": [s.to_dict() for s in evaluate_thresholds(p, year)],
+        "assumed_zero": sorted(inputs - set(profile)),
+    }
 
 
 @server.tool()

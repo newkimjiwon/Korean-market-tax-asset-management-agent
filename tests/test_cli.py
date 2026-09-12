@@ -47,10 +47,58 @@ def test_known_absent_is_ineligible_not_indeterminate(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     assert "sme_employment_reduction" in {i["key"] for i in payload["ineligible"]}
-    assert "sme_employment_reduction" not in {i["key"] for i in payload["indeterminate"]}
+    assert "sme_employment_reduction" not in {
+        i["key"] for i in payload["indeterminate"]
+    }
 
 
 def test_past_deadline_is_not_shown_as_negative_countdown(capsys):
     main([str(EXAMPLES / "salaried_33.json")])
     out = capsys.readouterr().out
     assert "D--" not in out
+
+
+def test_partial_legacy_input_cannot_emit_tax_or_saving_amounts(capsys):
+    main([str(EXAMPLES / "collected_partial.json"), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "indeterminate"
+    assert payload["tax"]["total"] is None
+    assert "tax_credits" in payload["tax"]["missing_fields"]
+    assert payload["actions"] == []
+    assert payload["thresholds"] == []
+
+
+@pytest.mark.parametrize(
+    "value", [[], {}, {"profile": {}}, {"year": 2026, "profile": {}, "settlement": {}}]
+)
+def test_invalid_scenario_has_structured_error(tmp_path, capsys, value):
+    path = tmp_path / "synthetic-invalid.json"
+    path.write_text(json.dumps(value))
+    assert main([str(path), "--json"]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "invalid_input"
+
+
+def test_broken_json_does_not_print_traceback_or_input(tmp_path, capsys):
+    path = tmp_path / "synthetic-invalid.json"
+    path.write_text("{invalid-json")
+    assert main([str(path), "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "invalid_input"
+    assert "{invalid-json" not in str(payload)
+
+
+def test_legacy_unsupported_year_is_actionable(tmp_path, capsys):
+    path = tmp_path / "synthetic-unsupported.json"
+    path.write_text(json.dumps({"year": 2098, "profile": {"age": 40}}))
+    assert main([str(path), "--json"]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "unsupported_year"
+
+
+@pytest.mark.parametrize("value", [None, -1, True, "invalid-amount"])
+def test_bad_legacy_amount_is_rejected_before_arithmetic(tmp_path, capsys, value):
+    path = tmp_path / "synthetic-bad-amount.json"
+    path.write_text(
+        json.dumps({"year": 2025, "profile": {"age": 40, "earned_income": value}})
+    )
+    assert main([str(path), "--json"]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "invalid_input"

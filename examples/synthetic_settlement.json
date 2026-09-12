@@ -1,0 +1,177 @@
+{
+  "year": 2026,
+  "settlement": {
+    "resident": true,
+    "other_income_present": false,
+    "amount_basis": "actual",
+    "gross_salary": 72000000,
+    "non_taxable_salary": 0,
+    "eligible_dependents": 0,
+    "employee_pension": 0,
+    "health_insurance": 0,
+    "long_term_care": 0,
+    "employment_insurance": 0,
+    "employment_periods": [
+      {
+        "start": "2026-01-01",
+        "end": "2026-12-31"
+      }
+    ],
+    "other_deductions": [],
+    "other_credits": [],
+    "pension_savings": 0,
+    "irp": 0,
+    "sme": {
+      "status": "not_applicable"
+    },
+    "rent": {
+      "status": "applied",
+      "homeless_household": true,
+      "household_role": "head",
+      "head_claims_housing": false,
+      "leases": [
+        {
+          "id": "synthetic-a",
+          "start": "2026-01-01",
+          "end": "2027-12-31",
+          "registered_from": "2026-01-01",
+          "registered_until": "2027-12-31",
+          "contract_eligible": true,
+          "home_eligible": true
+        }
+      ],
+      "payments": [
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-01",
+          "paid_on": "2026-01-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-02",
+          "paid_on": "2026-02-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-03",
+          "paid_on": "2026-03-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-04",
+          "paid_on": "2026-04-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-05",
+          "paid_on": "2026-05-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-06",
+          "paid_on": "2026-06-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-07",
+          "paid_on": "2026-07-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-08",
+          "paid_on": "2026-08-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-09",
+          "paid_on": "2026-09-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-10",
+          "paid_on": "2026-10-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-11",
+          "paid_on": "2026-11-25",
+          "amount": 720000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-12",
+          "paid_on": "2026-12-25",
+          "amount": 720000
+        }
+      ],
+      "support": [
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-04",
+          "received_on": "2026-04-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-05",
+          "received_on": "2026-05-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-06",
+          "received_on": "2026-06-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-07",
+          "received_on": "2026-07-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-08",
+          "received_on": "2026-08-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-09",
+          "received_on": "2026-09-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-10",
+          "received_on": "2026-10-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-11",
+          "received_on": "2026-11-28",
+          "amount": 90000
+        },
+        {
+          "lease_id": "synthetic-a",
+          "month": "2026-12",
+          "received_on": "2026-12-28",
+          "amount": 90000
+        }
+      ]
+    },
+    "withheld_income_tax": 6000000,
+    "withheld_local_tax": 600000
+  }
+}

@@ -12,6 +12,14 @@ from ktax.models import BenefitStream, Profile, Rationale, Recurrence, Won
 from ktax.rules import load_ruleset
 
 
+# The legacy engine requires caller-computed totals. Both MCP and CLI must
+# check the original keys before Profile defaults erase unknown vs zero.
+BASELINE_INPUT_FIELDS = frozenset({
+    "earned_income", "business_income", "financial_income", "other_income",
+    "income_deductions", "tax_credits",
+})
+
+
 @dataclass(frozen=True)
 class TaxEstimate:
     """총 세부담.

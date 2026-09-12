@@ -264,7 +264,7 @@ FIELD_PROMPTS: dict[str, str] = {
     "isa_preferential": "ISA가 서민형·농어민형인가요?",
     "is_homeless_household_head": "무주택 세대주이신가요?",
     "housing_subscription_contributed": "올해 주택청약종합저축 납입액이 얼마인가요?",
-    "annual_rent_paid": "작년 한 해 낸 월세 총액이 얼마인가요?",
+    "annual_rent_paid": "계산할 귀속연도에 낸 월세 총액이 얼마인가요?",
     "medical_expenses": "부양가족(본인·65세 이상·장애인 제외) 의료비가 얼마인가요?",
     "medical_expenses_unlimited": "본인·6세 이하·65세 이상·장애인 의료비가 얼마인가요?",
     "medical_expenses_fertility": "난임시술비 지출이 있으신가요?",

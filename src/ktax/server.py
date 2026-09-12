@@ -45,11 +45,19 @@ from ktax.scoring import (
     sort_by_value,
     urgent,
 )
-from ktax.tax import estimate_tax, simulate_isa_contribution, simulate_pension_contribution
+from ktax.tax import BASELINE_INPUT_FIELDS, estimate_tax, simulate_isa_contribution, simulate_pension_contribution
 
 _INSTRUCTIONS = """한국 세무·자산관리 계산 도구.
 
-쓰는 순서
+근로자 실제 연말정산은 describe_settlement_fields → calculate_salary_settlement를
+우선 사용한다. settlement 규칙의 지원 연도는 list_settlement_years로 확인한다.
+기존 Profile 경로는 공제 총액을 사전에 계산한 레거시 시뮬레이션이다.
+신규 혜택은 recommend_salary_actions 또는 compare_salary_settlements로 통합 재계산한다.
+미확인 자료는 indeterminate, 검증 미완료 규칙·예상 입력은 provisional이다.
+결정세액과 환급 상태는 별도이며 missing_fields/next_questions를 확인한다.
+실제 사용자 값은 예제·테스트·문서·로그에 저장하지 않는다.
+
+기존 Profile 시뮬레이션의 쓰는 순서
   1. describe_profile_fields 로 어떤 값이 필요한지 본다.
   2. 값을 모은다. 자동 수집 자료가 있으면 collect_profile 로 합치고,
      없으면 사용자에게 물어 직접 프로필 dict 를 만든다.
@@ -63,7 +71,7 @@ _INSTRUCTIONS = """한국 세무·자산관리 계산 도구.
   · indeterminate 항목을 '공제 대상이 아닙니다'라고 전하지 마라. 자격이
     없는 것이 아니라 우리가 아직 모르는 것이다. how_to_fill 이 무엇을
     물어야 하는지 알려준다.
-  · 모든 계산 결과의 rationale 을 근거로 삼아 설명하라. applied_rules 는
+  · 기존 계산의 rationale, 통합 계산의 rules·warnings·tax 계산 내역을 근거로 설명하라. applied_rules 는
     적용한 규칙, assumptions 는 가정, warnings 는 신뢰도 경고다.
   · 절세 효과 계산만 한다. 어떤 상품에 투자하라는 판단은 이 도구의 범위가
     아니다.
@@ -180,8 +188,20 @@ def estimate_tax_liability(profile: dict[str, Any], year: int) -> dict[str, Any]
       - "general":     소득세법 제62조 일반산출세액이 적용됨
       - "comparative": 비교산출세액이 적용됨 (종합과세가 더 가벼워 역전 방지)
     """
-    est = estimate_tax(_profile(profile), year)
+    p = _profile(profile)
+    from ktax.rules import RulesetNotFound
+    missing = sorted(k for k in BASELINE_INPUT_FIELDS if profile.get(k) is None)
+    if missing:
+        return {"status": "indeterminate", "total": None, "missing_fields": missing,
+                "next_tool": "calculate_salary_settlement",
+                "warnings": ["기존 API는 자동 근로소득공제·감면을 적용하지 않습니다. 근로자 정산에는 통합 계산을 사용하세요."]}
+    try:
+        est = estimate_tax(p, year)
+    except RulesetNotFound:
+        return {"status": "unsupported_year", "total": None, "available_years": available_years(), "next_tool": "calculate_salary_settlement"}
     return {
+        "status": "legacy_simulation",
+        "warnings": ["공제·감면 총액 사전 계산 입력 모드입니다. 실제 근로자 정산에는 calculate_salary_settlement를 사용하세요."],
         "taxable_base": est.taxable_base,
         "comprehensive_tax": est.comprehensive_tax,
         "separate_financial_tax": est.separate_financial_tax,
@@ -367,6 +387,7 @@ def recommend_actions(
         "ineligible": [i.to_dict() for i in discovery.ineligible],
         "indeterminate": [i.to_dict() for i in discovery.indeterminate],
         "missing_fields": discovery.missing_fields(),
+        "warnings": ["레거시 액션의 절감액은 합산할 수 없습니다. 기존 감면을 포함한 실제 추가 절감액은 recommend_salary_actions를 사용하세요."],
         "view": view,
         "year": year,
     }
@@ -473,6 +494,54 @@ def compare_snapshots(
     재계산을 촉발할 이유가 없다는 뜻이다.
     """
     return [c.to_dict() for c in diff_snapshots(_profile(previous), _profile(current))]
+
+
+@server.tool()
+def describe_settlement_fields() -> dict:
+    """근로자 정산 원자료 필드·질문·출처·개인정보 최소 수집 규약."""
+    from ktax.settlement_schema import describe_settlement_fields as describe
+    return describe()
+
+
+@server.tool()
+def collect_salary_inputs(records: list[dict[str, Any]]) -> dict:
+    """정산 자료 병합. 각 record: year, amount_basis, source, as_of, values.
+
+    source: user/payroll/withholding_receipt/hometax/support_notice/contract/estimated.
+    values는 describe_settlement_fields의 부분 객체. 배열은 전체 교체 단위.
+    동일 권위 충돌 시 data=None이며 사용자가 확인한 자료로 해결해야 한다.
+    """
+    from ktax.settlement_sources import collect_salary_inputs as collect
+    return collect(records)
+
+
+@server.tool()
+def list_settlement_years() -> dict:
+    """근로자 통합 정산 규칙 연도. legacy ruleset과 별도이며 검증 상태를 제공."""
+    import json
+    from ktax.settlement import RULES_DIR, available_settlement_years
+    return {"years": [{"year": y, "verified": json.loads((RULES_DIR / f"{y}.json").read_text())["verified"]} for y in available_settlement_years()]}
+
+
+@server.tool()
+def calculate_salary_settlement(data: dict[str, Any], year: int) -> dict:
+    """급여 원자료로 공제·감면·결정세액·환급을 계산. 누락은 질문, 예상은 provisional."""
+    from ktax.settlement import calculate_settlement
+    return calculate_settlement(data, year)
+
+
+@server.tool()
+def compare_salary_settlements(before: dict[str, Any], after: dict[str, Any], year: int) -> dict:
+    """여러 행동을 동시에 적용한 전후 세액 차이. 독립 공제액 합산 금지."""
+    from ktax.settlement import compare_settlements
+    return compare_settlements(before, after, year)
+
+
+@server.tool()
+def recommend_salary_actions(data: dict[str, Any], year: int) -> dict:
+    """기존 감면은 재신청 추천하지 않고 추가 절감액이 0인 경우도 구분."""
+    from ktax.settlement import recommend_settlement_actions
+    return recommend_settlement_actions(data, year)
 
 
 def main() -> None:

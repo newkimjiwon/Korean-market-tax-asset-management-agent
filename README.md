@@ -3,6 +3,25 @@
 한국 세무/자산관리 **에이전트를 위한 도구 레이어**. UI는 만들지 않는다.
 에이전트가 필요한 정보를 붙여 쓸 수 있도록 계산과 감시 기능만 노출한다.
 
+## 실제 근로자 정산
+
+급여·비과세·보험료·기존 중소기업 감면·월세지원 내역으로 결정세액과 환급을
+함께 계산하는 통합 경로를 추가했다. 2025·2026년을 지원하며, 귀속연도 전체
+검증이 끝나지 않은 규칙은 `provisional`(예상)로 반환한다.
+
+```bash
+uv run python -m ktax examples/synthetic_settlement.json --json
+```
+
+MCP에서는 `describe_settlement_fields` → `calculate_salary_settlement` →
+`recommend_salary_actions` 순서로 사용한다. 여러 자료는 `collect_salary_inputs`,
+여러 변경의 합산 효과는 `compare_salary_settlements`로 처리한다.
+[입력·출처·계산 범위 문서](docs/salary-settlement.md)를 참고한다.
+예제는 합성 자료이며 실제 사용자 정보는 저장소에 기록하지 않는다.
+
+아래의 기존 `Profile`·카탈로그 예제는 **공제총액을 사전에 계산해 넣는 레거시
+시뮬레이션**이다. 실제 급여 원자료를 넣는 연말정산에는 위 통합 경로를 사용한다.
+
 ```bash
 uv sync --extra mcp --extra dev
 uv run pytest

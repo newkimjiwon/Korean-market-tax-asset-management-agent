@@ -1,0 +1,180 @@
+{
+  "year": 2025,
+  "scope": "resident_earned_income_settlement",
+  "verified": false,
+  "reviewed_on": "2026-09-13",
+  "verification_note": "계산에 사용한 기본 세율·공제·감면 조문을 대조했으나 해당 귀속연도의 모든 특례와 신고 원단위 처리까지 검증 완료한 것은 아님. 예상 계산으로 표시.",
+  "income_tax_brackets": [
+    {
+      "upper": 14000000,
+      "rate": 0.06,
+      "progressive_deduction": 0
+    },
+    {
+      "upper": 50000000,
+      "rate": 0.15,
+      "progressive_deduction": 1260000
+    },
+    {
+      "upper": 88000000,
+      "rate": 0.24,
+      "progressive_deduction": 5760000
+    },
+    {
+      "upper": 150000000,
+      "rate": 0.35,
+      "progressive_deduction": 15440000
+    },
+    {
+      "upper": 300000000,
+      "rate": 0.38,
+      "progressive_deduction": 19940000
+    },
+    {
+      "upper": 500000000,
+      "rate": 0.4,
+      "progressive_deduction": 25940000
+    },
+    {
+      "upper": 1000000000,
+      "rate": 0.42,
+      "progressive_deduction": 35940000
+    },
+    {
+      "upper": null,
+      "rate": 0.45,
+      "progressive_deduction": 65940000
+    }
+  ],
+  "earned_deduction": [
+    [
+      5000000,
+      0,
+      0,
+      70
+    ],
+    [
+      15000000,
+      5000000,
+      3500000,
+      40
+    ],
+    [
+      45000000,
+      15000000,
+      7500000,
+      15
+    ],
+    [
+      100000000,
+      45000000,
+      12000000,
+      5
+    ],
+    [
+      null,
+      100000000,
+      14750000,
+      2
+    ]
+  ],
+  "earned_deduction_cap": 20000000,
+  "basic_deduction": 1500000,
+  "deduction_overall_cap": 25000000,
+  "earned_credit": {
+    "threshold": 1300000,
+    "low_rate": 55,
+    "high_base": 715000,
+    "high_rate": 30,
+    "caps": [
+      [
+        33000000,
+        740000,
+        0,
+        0,
+        740000
+      ],
+      [
+        70000000,
+        740000,
+        33000000,
+        "0.008",
+        660000
+      ],
+      [
+        120000000,
+        660000,
+        70000000,
+        "0.5",
+        500000
+      ],
+      [
+        null,
+        500000,
+        120000000,
+        "0.5",
+        200000
+      ]
+    ]
+  },
+  "standard_credit": 130000,
+  "local_rate": "0.1",
+  "sme_annual_cap": 2000000,
+  "rent": {
+    "annual_rent_limit": 10000000,
+    "credit_rate_low_income": 0.17,
+    "credit_rate_high_income": 0.15,
+    "low_income_earned_income_ceiling": 55000000,
+    "earned_income_ceiling": 80000000
+  },
+  "pension": {
+    "pension_savings_limit": 6000000,
+    "combined_limit_with_irp": 9000000,
+    "credit_rate_low_income": 0.15,
+    "credit_rate_high_income": 0.12,
+    "low_income_earned_income_ceiling": 55000000,
+    "low_income_comprehensive_income_ceiling": 45000000,
+    "withdrawal_start_age": 55
+  },
+  "sources": [
+    {
+      "component": "급여·근로소득공제·기본공제·세율·정산 순서",
+      "url": "https://t.nts.go.kr/nts/na/ntt/selectNttInfo.do?mi=2201&nttSn=1347723"
+    },
+    {
+      "component": "근로소득공제 (개정 2019-12-31)",
+      "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0047&lsiSeq=280405&urlMode=lsScJoRltInfoR"
+    },
+    {
+      "component": "근로소득세액공제 및 연금계좌 공제",
+      "url": "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875"
+    },
+    {
+      "component": "중소기업 감면",
+      "url": "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=239023"
+    },
+    {
+      "component": "감면 시 근로소득세액공제 조정",
+      "url": "https://johap.kbiz.or.kr/download.do?atcfSqno=1&fleDwnDs=noticeAttachFile&seq=2000058406"
+    },
+    {
+      "component": "월세 공제 (2026년 배우자 특례는 별도 검토)",
+      "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=02&joNo=0095&lsiSeq=280409&urlMode=lsScJoRltInfoR"
+    },
+    {
+      "component": "월세 공적 지원금 제외",
+      "url": "https://taxlaw.nts.go.kr/qt/USEQTA002P.do?ntstDcmId=200000000000009990"
+    },
+    {
+      "component": "표준세액공제",
+      "url": "https://www.law.go.kr/LSW/lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=1000667082"
+    }
+  ],
+  "limitations": [
+    "혼합소득·비거주자·외국인 단일세율 등 특례 미지원",
+    "부양가족 및 추가 공제의 자격·개별 한도는 원천 자료에서 확인 필요",
+    "월중 주거·근로 조건 변경분은 검증된 eligible_amount 및 해당 기간 지원액 eligible_support_amount 필요",
+    "표준세액공제와 특별공제 중 유리한 방식을 비교하되 기부금 등 이월액은 계산하지 않음",
+    "원 미만 버림을 적용한 예상액이며 최종 신고서 단수처리는 대조 필요"
+  ]
+}

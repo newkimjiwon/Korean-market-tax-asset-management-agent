@@ -21,6 +21,9 @@
     "culture_spending": 600000,
     "isa_contributed_this_year": 0,
     "isa_contributed_total": 0,
-    "sme_employment_start_year": 2024
+    "sme_employment_start_year": 2024,
+    "business_income": 0,
+    "other_income": 0,
+    "tax_credits": 0
   }
 }

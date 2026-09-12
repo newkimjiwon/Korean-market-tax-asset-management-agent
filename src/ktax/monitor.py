@@ -14,7 +14,7 @@ from enum import Enum
 
 from ktax.models import Profile, Won
 from ktax.rules import load_ruleset
-from ktax.tax import marginal_rate
+from ktax.tax import marginal_rate, taxable_base
 
 
 class Severity(str, Enum):
@@ -63,7 +63,7 @@ def evaluate_thresholds(profile: Profile, year: int) -> list[ThresholdSignal]:
     if exceeded:
         detail = (
             f"금융소득 {profile.financial_income:,}원으로 종합과세 대상입니다. "
-            f"한계세율 {marginal_rate(profile.taxable_base(), year):.0%}가 적용됩니다."
+            f"한계세율 {marginal_rate(taxable_base(profile, year), year):.0%}가 적용됩니다."
         )
     else:
         detail = (
@@ -100,7 +100,7 @@ def evaluate_thresholds(profile: Profile, year: int) -> list[ThresholdSignal]:
     )
 
     # 3. 세율 구간 경계
-    base = profile.taxable_base()
+    base = taxable_base(profile, year)
     for bracket in rules["income_tax_brackets"]:
         upper = bracket["upper"]
         if upper is None or base > upper:

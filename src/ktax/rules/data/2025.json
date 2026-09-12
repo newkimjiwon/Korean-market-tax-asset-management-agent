@@ -63,7 +63,8 @@
   },
   "financial_income": {
     "comprehensive_taxation_threshold": 20000000,
-    "withholding_rate": 0.154
+    "withholding_rate": 0.154,
+    "withholding_rate_income_tax": 0.14
   },
   "housing_subscription": {
     "annual_contribution_limit": 3000000,
@@ -104,14 +105,16 @@
       "https://www.law.go.kr/LSW//lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=1000852480&lsId=001584&print=print",
       "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875",
       "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7874",
-      "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=40632&cntntsId=239023"
+      "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=40632&cntntsId=239023",
+      "https://www.law.go.kr/LSW//lsLawLinkInfo.do?lsJoLnkSeq=1000819717&lsId=001565&chrClsCd=010202&print=print",
+      "https://call.nts.go.kr/call/qna/selectQnaInfo.do?mi=1441&ctgId=CTG11775"
     ],
     "checked": {
       "income_tax_brackets": "소득세법 제55조. 법령의 누적액 형태(예: 5,000만 초과 시 624만원+24%)를 누진공제 형태로 환산해 8개 구간 전부 일치 확인.",
       "local_income_tax_rate": "지방소득세 = 소득세의 10%. 금융소득 원천징수 15.4%(=14%×1.1)로 교차 확인.",
       "pension_account": "조세특례제한법 제86조의4. 연금저축 600만/IRP 합산 900만, 종합소득금액 4,500만(총급여 5,500만) 기준 15%/12%.",
       "isa": "연 2,000만/총 1억, 일반형 200만·서민형 400만 비과세, 초과분 9.9% 분리과세, 의무가입 3년.",
-      "financial_income": "이자·배당 합계 2,000만원 초과 시 종합과세. 이하는 15.4% 원천징수 분리과세.",
+      "financial_income": "이자·배당 합계 2,000만원 초과 시 종합과세(소득세법 제62조). 원천징수세율은 소득세 14%, 지방소득세 포함 15.4%. 산출세액 = MAX(일반산출세액, 비교산출세액).",
       "housing_subscription": "무주택 세대주·총급여 7,000만 이하, 납입한도 300만원(2024년 240만→300만 상향)의 40% 소득공제.",
       "monthly_rent": "총급여 8,000만 이하, 한도 1,000만원, 총급여 5,500만 기준 17%/15%. 최대 환급 170만원으로 교차 확인.",
       "medical_expense": "총급여 3% 초과분, 공제율 15%, 일반 한도 700만원.",
@@ -119,7 +122,7 @@
       "sme_employment_reduction": "조세특례제한법 제30조. 청년(15~34세) 90%·5년, 60세 이상·장애인·경력단절 70%·3년, 과세기간별 한도는 양쪽 모두 200만원. 일부 2차 자료의 150만원은 개정 전 수치."
     },
     "known_gaps": [
-      "금융소득 2,000만원 초과분의 종합과세 합산은 미구현 (evaluate_thresholds 로 경계 판정만 제공)",
+      "배당가산액(Gross-up) 및 배당세액공제 미반영. 둘은 이중과세 조정을 위해 서로 상쇄되므로 한쪽만 넣으면 오히려 부정확해진다. 내국법인 배당을 구분해 받을 수 있게 되면 함께 구현할 것.",
       "의료비 난임시술비 고율(20%) 및 본인·65세 이상·장애인 한도 예외 미반영",
       "기부금 소득금액 대비 공제 한도 미반영",
       "신용카드 등 사용금액 소득공제 미구현"

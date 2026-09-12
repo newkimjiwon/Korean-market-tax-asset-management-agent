@@ -14,10 +14,25 @@ from ktax.rules import load_ruleset
 
 @dataclass(frozen=True)
 class TaxEstimate:
+    """총 세부담.
+
+    산출세액이 아니라 실제로 부담하는 세금 전체를 담는다. 금융소득이
+    종합과세 기준금액 이하면 그 세금은 원천징수로 끝나 산출세액에
+    잡히지 않는데, 초과하면 산출세액 안으로 들어온다. 산출세액만
+    보고하면 같은 이름의 숫자가 경계 양쪽에서 다른 것을 가리키게 되어
+    비교가 불가능해진다 — 하필 그 경계가 우리가 감시하는 지점이다.
+    """
+
     taxable_base: Won
-    income_tax: Won          # 산출세액에서 세액공제를 뺀 결정세액
-    local_income_tax: Won    # 지방소득세 (소득세의 10%)
+    comprehensive_tax: Won   # 종합소득 결정세액 (세액공제 차감 후)
+    separate_financial_tax: Won  # 분리과세로 종결된 금융소득세 (소득세분)
+    local_income_tax: Won    # 지방소득세 (소득세 합계의 10%)
     rationale: Rationale
+    financial_income_taxation: str = "separate"   # separate | general | comparative
+
+    @property
+    def income_tax(self) -> Won:
+        return self.comprehensive_tax + self.separate_financial_tax
 
     @property
     def total(self) -> Won:
@@ -59,30 +74,103 @@ def gross_income_tax(taxable_base: Won, year: int) -> Won:
     raise AssertionError("마지막 구간의 upper 는 null 이어야 합니다")
 
 
+def taxable_base(profile: Profile, year: int) -> Won:
+    """과세표준.
+
+    금융소득은 종합과세 기준금액을 넘는 부분만 합산된다. 기준금액 이하는
+    원천징수로 과세가 종결되어 종합소득에 들어가지 않는다.
+    """
+    rules = load_ruleset(year)["financial_income"]
+    excess = max(0, profile.financial_income - rules["comprehensive_taxation_threshold"])
+    return max(
+        0, profile.comprehensive_income + excess - profile.income_deductions
+    )
+
+
+def gross_income_tax_for(profile: Profile, year: int) -> tuple[Won, str]:
+    """소득세법 제62조에 따른 산출세액과 적용된 방식.
+
+    금융소득이 종합과세 기준금액을 넘으면 두 가지로 계산해 큰 쪽을 택한다.
+    종합과세가 오히려 원천징수보다 가벼워지는 역전을 막기 위한 장치이므로,
+    둘 중 하나만 계산하면 세액이 과소 산출된다.
+    """
+    rules = load_ruleset(year)
+    fin = rules["financial_income"]
+    threshold = fin["comprehensive_taxation_threshold"]
+    rate = fin["withholding_rate_income_tax"]
+    other_base = profile.non_financial_taxable_base()
+
+    if profile.financial_income <= threshold:
+        # 원천징수로 과세 종결. 금융소득은 종합소득에 들어가지 않는다.
+        return gross_income_tax(other_base, year), "separate"
+
+    excess = profile.financial_income - threshold
+
+    # ① 일반산출세액: 기준금액까지는 원천징수세율, 초과분은 다른 소득과 합산
+    general = round(threshold * rate) + gross_income_tax(other_base + excess, year)
+
+    # ② 비교산출세액: 금융소득 전체를 원천징수세율로 분리
+    comparative = round(profile.financial_income * rate) + gross_income_tax(
+        other_base, year
+    )
+
+    if general >= comparative:
+        return general, "general"
+    return comparative, "comparative"
+
+
 def estimate_tax(profile: Profile, year: int) -> TaxEstimate:
     """베이스라인 세액. 모든 액션 비교의 기준점."""
     rules = load_ruleset(year)
-    base = profile.taxable_base()
-    gross = gross_income_tax(base, year)
+    fin = rules["financial_income"]
+    base = taxable_base(profile, year)
+    gross, method = gross_income_tax_for(profile, year)
     determined = max(0, gross - profile.tax_credits)
-    local = round(determined * rules["local_income_tax_rate"])
+
+    # 분리과세로 종결된 금융소득세. 세액공제 대상이 아니므로 따로 더한다.
+    # 종합과세로 넘어가면 이 금액은 이미 산출세액 안에 들어가 있다.
+    separate_tax = (
+        round(profile.financial_income * fin["withholding_rate_income_tax"])
+        if method == "separate"
+        else 0
+    )
+    local = round((determined + separate_tax) * rules["local_income_tax_rate"])
+
+    applied = [
+        f"{year}년 종합소득세율표 (한계세율 {marginal_rate(base, year):.0%})",
+        f"지방소득세 = 소득세 × {rules['local_income_tax_rate']:.0%}",
+    ]
+    assumptions = []
+
+    if method == "separate":
+        applied.append(
+            f"금융소득 {profile.financial_income:,}원은 종합과세 기준금액 "
+            f"{fin['comprehensive_taxation_threshold']:,}원 이하로 분리과세 종결 "
+            f"(원천징수 {fin['withholding_rate']:.1%})"
+        )
+    else:
+        applied.append(
+            f"소득세법 제62조 — 일반산출세액과 비교산출세액 중 큰 쪽 적용 "
+            f"(이번 계산은 {'일반' if method == 'general' else '비교'}산출세액)"
+        )
+        assumptions.append(
+            "배당가산액(Gross-up)과 배당세액공제는 반영하지 않았습니다. "
+            "둘은 서로 상쇄되는 항목이라 한쪽만 넣으면 오히려 부정확해집니다"
+        )
 
     return TaxEstimate(
         taxable_base=base,
-        income_tax=determined,
+        comprehensive_tax=determined,
+        separate_financial_tax=separate_tax,
         local_income_tax=local,
+        financial_income_taxation=method,
         rationale=Rationale(
             summary=(
                 f"과세표준 {base:,}원 → 산출세액 {gross:,}원, "
                 f"세액공제 {profile.tax_credits:,}원 차감 후 결정세액 {determined:,}원"
             ),
-            applied_rules=[
-                f"{year}년 종합소득세율표 (한계세율 {marginal_rate(base, year):.0%})",
-                f"지방소득세 = 소득세 × {rules['local_income_tax_rate']:.0%}",
-            ],
-            assumptions=[
-                "금융소득 종합과세 합산은 별도 판정 필요 (evaluate_thresholds 참고)",
-            ],
+            applied_rules=applied,
+            assumptions=assumptions,
             ruleset_year=year,
             ruleset_verified=rules.get("verified", False),
         ),
@@ -105,7 +193,7 @@ def income_deduction_saving(profile: Profile, year: int, deduction: Won) -> Won:
     경계를 걸치면 단일 한계세율을 곱한 값이 틀리기 때문이다.
     """
     rules = load_ruleset(year)
-    base = profile.taxable_base()
+    base = taxable_base(profile, year)
     before = gross_income_tax(base, year)
     after = gross_income_tax(max(0, base - max(0, deduction)), year)
     diff = max(0, before - after)
@@ -115,7 +203,7 @@ def income_deduction_saving(profile: Profile, year: int, deduction: Won) -> Won:
 def tax_credit_saving(profile: Profile, year: int, credit: Won) -> Won:
     """세액공제 절감액. 산출세액을 넘는 공제는 버려지므로 상한을 둔다."""
     rules = load_ruleset(year)
-    gross = gross_income_tax(profile.taxable_base(), year)
+    gross, _ = gross_income_tax_for(profile, year)
     headroom = max(0, gross - profile.tax_credits)
     effective = min(max(0, credit), headroom)
     return effective + round(effective * rules["local_income_tax_rate"])

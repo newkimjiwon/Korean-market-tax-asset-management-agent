@@ -111,11 +111,21 @@ class Profile:
 
     @property
     def comprehensive_income(self) -> Won:
-        """종합소득금액 (근사). 금융소득은 2천만원 초과분만 합산된다."""
+        """금융소득을 제외한 종합소득금액.
+
+        소득세법 제62조에서 '이자소득등을 제외한 다른 종합소득금액'에 해당한다.
+        금융소득은 종합과세 기준금액 초과 여부에 따라 합산 방식이 달라지므로
+        여기서 섞지 않는다.
+        """
         return self.earned_income + self.business_income + self.other_income
 
-    def taxable_base(self) -> Won:
-        """과세표준."""
+    def non_financial_taxable_base(self) -> Won:
+        """금융소득을 제외한 과세표준.
+
+        실제 과세표준은 금융소득 합산 여부에 따라 달라지므로 세법을 아는
+        `ktax.tax.taxable_base(profile, year)` 를 쓴다. 이 메서드는 그 계산의
+        재료이며, 단독으로는 과세표준이 아니다.
+        """
         return max(0, self.comprehensive_income - self.income_deductions)
 
 

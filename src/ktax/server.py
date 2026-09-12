@@ -82,13 +82,26 @@ def list_ruleset_years() -> list[int]:
 
 @server.tool()
 def estimate_tax_liability(profile: dict[str, Any], year: int) -> dict[str, Any]:
-    """베이스라인 세액을 계산한다. 모든 액션 비교의 기준점."""
+    """총 세부담을 계산한다. 모든 액션 비교의 기준점.
+
+    산출세액이 아니라 실제 부담 전체를 돌려준다. 금융소득이 종합과세
+    기준금액 이하면 그 세금은 원천징수로 끝나 산출세액에 잡히지 않으므로,
+    산출세액만 보고하면 경계 양쪽 숫자를 비교할 수 없다.
+
+    `financial_income_taxation` 은 적용된 방식이다:
+      - "separate":    기준금액 이하, 원천징수로 종결
+      - "general":     소득세법 제62조 일반산출세액이 적용됨
+      - "comparative": 비교산출세액이 적용됨 (종합과세가 더 가벼워 역전 방지)
+    """
     est = estimate_tax(_profile(profile), year)
     return {
         "taxable_base": est.taxable_base,
+        "comprehensive_tax": est.comprehensive_tax,
+        "separate_financial_tax": est.separate_financial_tax,
         "income_tax": est.income_tax,
         "local_income_tax": est.local_income_tax,
         "total": est.total,
+        "financial_income_taxation": est.financial_income_taxation,
         "rationale": _rationale_dict(est.rationale),
     }
 

@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field as dc_field, replace
 from typing import Callable
 
 from ktax.assumptions import persistence_for, persistence_note
@@ -25,6 +25,7 @@ from ktax.models import (
     Won,
 )
 from ktax.rules import load_ruleset
+from ktax.sources import how_to_fill
 from ktax.tax import (
     credit_card_deduction,
     income_deduction_saving,
@@ -33,6 +34,28 @@ from ktax.tax import (
     simulate_pension_contribution,
     tax_credit_saving,
 )
+
+
+@dataclass(frozen=True)
+class Indeterminate:
+    """자격 미달이 아니라, 판단에 필요한 값이 없는 상태.
+
+    이 둘을 합치면 에이전트가 "공제 대상이 아닙니다"라고 단정하게 되는데
+    사실은 자료가 없을 뿐이다. 자동 수집에서 값이 비어 있는 것은 대개
+    "쓰지 않았다"가 아니라 "아직 못 가져왔다"는 뜻이다.
+    """
+
+    key: str
+    title: str
+    missing: list[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "key": self.key,
+            "title": self.title,
+            "missing": self.missing,
+            "how_to_fill": [how_to_fill(name) for name in self.missing],
+        }
 
 
 @dataclass(frozen=True)
@@ -49,6 +72,35 @@ Evaluation = Action | Ineligible
 Evaluator = Callable[[Profile, int], Evaluation]
 
 _CATALOG: list[Evaluator] = []
+
+# 각 액션을 판단하려면 반드시 알아야 하는 필드. 없으면 계산하지 않고
+# Indeterminate 로 돌려보낸다. 여기 없는 필드는 기본값으로 두어도
+# 결과의 방향이 바뀌지 않는 것들이다.
+REQUIRED_FIELDS: dict[str, frozenset[str]] = {
+    "pension_account": frozenset({
+        "age", "earned_income", "pension_savings_contributed", "irp_contributed",
+    }),
+    "housing_subscription": frozenset({
+        "earned_income", "is_homeless_household_head",
+        "housing_subscription_contributed",
+    }),
+    "sme_employment_reduction": frozenset({
+        "age", "earned_income", "sme_employment_start_year",
+    }),
+    "isa_account": frozenset({
+        "financial_income", "isa_contributed_this_year", "isa_contributed_total",
+    }),
+    "payment_method_switch": frozenset({
+        "earned_income", "credit_card_spending", "debit_cash_spending",
+    }),
+    "monthly_rent_credit": frozenset({
+        "earned_income", "is_homeless_household_head", "annual_rent_paid",
+    }),
+    "medical_expense_credit": frozenset({
+        "earned_income", "medical_expenses", "medical_expenses_unlimited",
+    }),
+    "donation_credit": frozenset({"earned_income", "donations"}),
+}
 
 
 def entry(fn: Evaluator) -> Evaluator:
@@ -500,18 +552,44 @@ def _with_persistence(action: Action) -> Action:
 class Discovery:
     applicable: list[Action]
     ineligible: list[Ineligible]
+    indeterminate: list[Indeterminate] = dc_field(default_factory=list)
+
+    def missing_fields(self) -> list[str]:
+        """판단을 막고 있는 값들. 채우면 액션이 더 나온다."""
+        seen: list[str] = []
+        for item in self.indeterminate:
+            for name in item.missing:
+                if name not in seen:
+                    seen.append(name)
+        return seen
 
 
-def discover_actions(profile: Profile, year: int) -> Discovery:
+def discover_actions(
+    profile: Profile, year: int, known: frozenset[str] | None = None
+) -> Discovery:
     """프로필에 적용 가능한 액션을 전부 찾는다.
 
     자격 미달 항목도 사유와 함께 돌려준다. "왜 나는 이게 안 뜨죠?"에
     답하지 못하는 도구는 에이전트를 곤란하게 만든다.
+
+    `known` 은 실제로 값을 확보한 필드 이름들이다. 주면 값이 없는 액션을
+    Indeterminate 로 분류해 '자격 미달'과 구분한다. 주지 않으면 모든
+    필드를 안다고 보고 기존처럼 동작한다.
     """
     applicable: list[Action] = []
     ineligible: list[Ineligible] = []
+    indeterminate: list[Indeterminate] = []
 
     for evaluate in _CATALOG:
+        key = evaluate.__name__
+        if known is not None:
+            gaps = sorted(REQUIRED_FIELDS.get(key, frozenset()) - known)
+            if gaps:
+                indeterminate.append(
+                    Indeterminate(key=key, title=_TITLES.get(key, key), missing=gaps)
+                )
+                continue
+
         result = evaluate(profile, year)
         if isinstance(result, Ineligible):
             ineligible.append(result)
@@ -522,7 +600,23 @@ def discover_actions(profile: Profile, year: int) -> Discovery:
                 Ineligible(result.key, result.title, "계산된 절감액이 0원입니다.")
             )
 
-    return Discovery(applicable=applicable, ineligible=ineligible)
+    return Discovery(
+        applicable=applicable,
+        ineligible=ineligible,
+        indeterminate=indeterminate,
+    )
+
+
+_TITLES: dict[str, str] = {
+    "pension_account": "연금계좌 추가 납입",
+    "housing_subscription": "주택청약종합저축 납입",
+    "sme_employment_reduction": "중소기업 취업자 소득세 감면",
+    "isa_account": "ISA 납입",
+    "payment_method_switch": "결제수단 전환",
+    "monthly_rent_credit": "월세 세액공제",
+    "medical_expense_credit": "의료비 세액공제",
+    "donation_credit": "기부금 세액공제",
+}
 
 
 def catalog_keys() -> list[str]:

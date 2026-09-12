@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -27,6 +28,13 @@ from ktax.models import (
     Recurrence,
 )
 from ktax.catalog import catalog_keys, discover_actions as _discover
+from ktax.sources import (
+    FieldSource,
+    from_hometax,
+    from_source,
+    how_to_fill,
+    merge as _merge,
+)
 from ktax.monitor import diff_snapshots, evaluate_thresholds
 from ktax.rules import available_years, load_ruleset
 from ktax.scoring import (
@@ -146,12 +154,68 @@ def simulate_isa(
 
 
 # --------------------------------------------------------------------------
+# 프로필 수집
+# --------------------------------------------------------------------------
+
+@server.tool()
+def collect_profile(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """여러 원천의 값을 합쳐 프로필을 만든다.
+
+    각 record 는 다음 형태다:
+      {"source": "hometax_simplified"|"withholding_receipt"|"mydata"|"user"|"estimated",
+       "as_of": "2026-01-20",
+       "values": {"earned_income": 52000000, ...}}
+
+    간소화 자료는 `values` 대신 `categories` 에 항목별 금액을 그대로 넣어도
+    된다 ({"신용카드": 22000000, "현금영수증": 1000000, ...}). 직불카드와
+    현금영수증처럼 한 필드로 합쳐지는 항목은 자동으로 합산된다.
+
+    **키를 넣지 않으면 '모름', null 을 넣으면 '없는 것으로 확인됨'이다.**
+    이 둘은 다르다. 사용자가 "중소기업에 다닌 적 없다"고 답한 것을 모름으로
+    두면 같은 질문을 계속 하게 된다.
+
+    돌려주는 `missing` 은 아직 확보하지 못한 필드이고, `conflicts` 는 같은
+    권위의 두 원천이 다른 값을 준 경우다. 충돌은 임의로 덮지 않는다 —
+    간소화자료와 마이데이터의 금액이 어긋나는 것은 사용자가 알아야 할 사실이다.
+    """
+    parsed = []
+    for record in records:
+        source = FieldSource(record["source"])
+        as_of = date.fromisoformat(record["as_of"])
+        if "categories" in record:
+            parsed.append(from_hometax(as_of, record["categories"]))
+        else:
+            parsed.append(from_source(source, as_of, record.get("values", {})))
+
+    data = _merge(*parsed)
+    return {
+        "profile": {k: v.value for k, v in data.fields.items()},
+        "sources": {k: v.source.value for k, v in data.fields.items()},
+        "missing": sorted(data.missing()),
+        "conflicts": [c.to_dict() for c in data.conflicts],
+    }
+
+
+@server.tool()
+def explain_missing_field(name: str) -> dict[str, Any]:
+    """빠진 값을 어떻게 채우는지 알려준다.
+
+    어느 원천에서 가져올 수 있는지와 사용자에게 물을 문장을 함께 돌려준다.
+    `user_only` 가 true 면 외부 자료로는 알 수 없어 반드시 물어야 한다.
+    """
+    return how_to_fill(name)
+
+
+# --------------------------------------------------------------------------
 # 카탈로그
 # --------------------------------------------------------------------------
 
 @server.tool()
 def recommend_actions(
-    profile: dict[str, Any], year: int, view: str = "value"
+    profile: dict[str, Any],
+    year: int,
+    view: str = "value",
+    known_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """이 사람이 지금 할 수 있는 절세 액션을 찾아 순위를 매긴다.
 
@@ -164,11 +228,20 @@ def recommend_actions(
       - "set_and_forget": 1회 세팅 → 매년 자동인 것만
       - "urgent":         마감 임박 오버레이
 
+    `known_fields` 에 실제로 값을 확보한 필드 이름을 주면(collect_profile 의
+    결과에서 얻는다) 값이 없는 액션을 `indeterminate` 로 분류한다. 주지 않으면
+    모든 값을 안다고 보고 계산하므로, 자동 수집을 쓴다면 반드시 넘겨야 한다 —
+    값이 없는 것을 '자격 미달'로 단정하면 사용자에게 틀린 말을 하게 된다.
+
     `ineligible` 에는 자격 미달 항목이 사유와 함께 담긴다. 사용자가
     "왜 나는 이게 안 뜨죠?"라고 물으면 여기서 답을 찾을 수 있다.
+    `indeterminate` 는 자격 미달이 아니라 판단할 자료가 없는 경우이며,
+    각 항목에 무엇을 어디서 채워야 하는지가 함께 담긴다.
     """
     p = _profile(profile)
-    discovery = _discover(p, year)
+    discovery = _discover(
+        p, year, known=frozenset(known_fields) if known_fields is not None else None
+    )
     scored = score_actions(discovery.applicable, p)
 
     views = {
@@ -183,6 +256,8 @@ def recommend_actions(
     return {
         "actions": [s.to_dict() for s in views[view](scored)],
         "ineligible": [i.to_dict() for i in discovery.ineligible],
+        "indeterminate": [i.to_dict() for i in discovery.indeterminate],
+        "missing_fields": discovery.missing_fields(),
         "view": view,
         "year": year,
     }

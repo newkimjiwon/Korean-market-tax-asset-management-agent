@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ktax.models import Profile, Won
+from ktax.sources import ProfileData, label_of
 from ktax.rules import load_ruleset
 from ktax.tax import marginal_rate, taxable_base
 
@@ -143,63 +144,186 @@ def evaluate_thresholds(profile: Profile, year: int) -> list[ThresholdSignal]:
 # --------------------------------------------------------------------------
 # 스냅샷 비교 — 생활 사건 감지
 # --------------------------------------------------------------------------
+#
+# 세금 상황은 날짜가 아니라 인생이 바뀔 때 변한다. 다만 자동 수집을 쓰면
+# 값이 달라지는 이유가 둘로 갈린다.
+#
+#   1. 사용자의 상황이 실제로 바뀌었다 (이직, 연봉 인상, 출산)
+#   2. 더 정확한 자료를 확보했다 (사용자 어림값 → 간소화자료)
+#
+# 이 둘을 합치면 "소득이 늘었네요"라고 알림이 나가는데 사실은 우리가
+# 제대로 된 자료를 처음 본 것뿐일 수 있다. 알림 한 번 잘못 나가면
+# 사용자는 알림을 끄고, 그러면 정작 중요한 순간에 닿지 못한다.
 
-# 세금 상황은 날짜가 아니라 인생이 바뀔 때 변한다. 아래 필드의 유의미한
-# 변화는 재계산을 촉발해야 한다.
-_WATCHED_FIELDS: dict[str, tuple[str, float]] = {
-    # 필드명: (사람이 읽을 이름, 유의미하다고 볼 상대 변화율)
-    "earned_income": ("근로소득", 0.05),
-    "business_income": ("사업소득", 0.05),
-    "financial_income": ("금융소득", 0.10),
-    "other_income": ("기타소득", 0.10),
+# 금액 필드의 노이즈 허용치. 이보다 작은 변동은 무시한다.
+_TOLERANCE: dict[str, float] = {
+    "earned_income": 0.05,
+    "business_income": 0.05,
+    "financial_income": 0.10,
+    "other_income": 0.10,
 }
+_DEFAULT_TOLERANCE = 0.10
+
+# 금액이 아니어서 조금만 달라져도 의미가 있는 필드.
+_EXACT_FIELDS = frozenset({
+    "age", "filing_type", "dependent_children", "isa_preferential",
+    "is_homeless_household_head", "sme_employment_start_year",
+    "sme_special_category", "planned_withdrawal_age",
+})
+
+
+class ChangeKind(str, Enum):
+    VALUE_CHANGED = "value_changed"      # 상황이 실제로 바뀜 — 생활 사건
+    CORRECTED = "corrected"              # 더 나은 출처가 다른 값을 줌 — 데이터 정정
+    ENRICHED = "enriched"                # 몰랐던 값을 새로 확보
+    SOURCE_UPGRADED = "source_upgraded"  # 값은 같고 출처만 개선 — 알릴 일 아님
+    LOST = "lost"                        # 있던 값이 사라짐
 
 
 @dataclass(frozen=True)
 class ProfileChange:
     field: str
     label: str
-    previous: Won
-    current: Won
+    previous: object
+    current: object
+    kind: ChangeKind = ChangeKind.VALUE_CHANGED
+    previous_source: str | None = None
+    current_source: str | None = None
 
     @property
-    def delta(self) -> Won:
-        return self.current - self.previous
+    def delta(self) -> object:
+        if isinstance(self.previous, (int, float)) and isinstance(self.current, (int, float)):
+            return self.current - self.previous
+        return None
+
+    @property
+    def is_life_event(self) -> bool:
+        """사용자에게 알릴 만한 변화인가.
+
+        데이터 정정과 출처 개선은 우리 쪽 사정이지 사용자의 인생이
+        바뀐 것이 아니다.
+        """
+        return self.kind is ChangeKind.VALUE_CHANGED
+
+    @property
+    def affects_calculation(self) -> bool:
+        """재계산이 필요한가. 값이 그대로면 결과도 그대로다."""
+        return self.kind is not ChangeKind.SOURCE_UPGRADED
 
     def to_dict(self) -> dict:
         return {
             "field": self.field,
             "label": self.label,
+            "kind": self.kind.value,
             "previous": self.previous,
             "current": self.current,
             "delta": self.delta,
+            "previous_source": self.previous_source,
+            "current_source": self.current_source,
+            "is_life_event": self.is_life_event,
+            "affects_calculation": self.affects_calculation,
         }
 
 
-def diff_snapshots(previous: Profile, current: Profile) -> list[ProfileChange]:
-    """직전 스냅샷 대비 유의미한 변화만 뽑는다.
+def _is_noise(name: str, before: object, after: object) -> bool:
+    """허용치 안의 변동인가. 사소한 변동마다 알리면 사용자는 알림을 끈다."""
+    if name in _EXACT_FIELDS or not isinstance(before, (int, float)):
+        return False
+    if not isinstance(after, (int, float)):
+        return False
+    tolerance = _TOLERANCE.get(name, _DEFAULT_TOLERANCE)
+    baseline = max(abs(before), 1)
+    return abs(after - before) / baseline < tolerance
 
-    노이즈를 걸러내는 게 핵심이다. 사소한 변동마다 알림을 쏘면
-    사용자는 알림을 끄고, 그러면 정작 중요한 순간에 닿지 못한다.
+
+def diff_snapshots(previous: Profile, current: Profile) -> list[ProfileChange]:
+    """Profile 두 개를 비교한다. 출처 정보가 없으므로 값 변화만 본다.
+
+    자동 수집을 쓴다면 `diff_profile_data` 를 써야 한다. 출처를 모르면
+    실제 변화와 데이터 정정을 구분할 수 없다.
     """
     changes: list[ProfileChange] = []
-    for field, (label, tolerance) in _WATCHED_FIELDS.items():
-        before = getattr(previous, field)
-        after = getattr(current, field)
-        if before == after:
-            continue
-        baseline = max(abs(before), 1)
-        if abs(after - before) / baseline < tolerance:
+    for name in _TOLERANCE:
+        before, after = getattr(previous, name), getattr(current, name)
+        if before == after or _is_noise(name, before, after):
             continue
         changes.append(
-            ProfileChange(field=field, label=label, previous=before, current=after)
+            ProfileChange(field=name, label=label_of(name), previous=before, current=after)
         )
 
     if previous.age != current.age:
         changes.append(
             ProfileChange(
-                field="age", label="나이", previous=previous.age, current=current.age
+                field="age", label=label_of("age"),
+                previous=previous.age, current=current.age,
             )
         )
+    return changes
+
+
+def diff_profile_data(previous: ProfileData, current: ProfileData) -> list[ProfileChange]:
+    """출처를 아는 스냅샷 비교.
+
+    값이 달라진 이유를 구분한다. 더 권위 있는 출처가 다른 값을 주었다면
+    그것은 사용자의 상황이 바뀐 것이 아니라 우리가 이제야 제대로 된 자료를
+    본 것이다 — 재계산은 해야 하지만 "소득이 바뀌셨네요"라고 말하면 안 된다.
+    """
+    changes: list[ProfileChange] = []
+    names = sorted(previous.known() | current.known())
+
+    for name in names:
+        before = previous.fields.get(name)
+        after = current.fields.get(name)
+        label = label_of(name)
+
+        if before is None and after is not None:
+            changes.append(ProfileChange(
+                field=name, label=label, previous=None, current=after.value,
+                kind=ChangeKind.ENRICHED, current_source=after.source.value,
+            ))
+            continue
+
+        if after is None and before is not None:
+            changes.append(ProfileChange(
+                field=name, label=label, previous=before.value, current=None,
+                kind=ChangeKind.LOST, previous_source=before.source.value,
+            ))
+            continue
+
+        if before is None or after is None:
+            continue
+
+        same_value = before.value == after.value
+        better_source = after.rank > before.rank
+
+        if same_value:
+            if before.source is not after.source and better_source:
+                changes.append(ProfileChange(
+                    field=name, label=label, previous=before.value, current=after.value,
+                    kind=ChangeKind.SOURCE_UPGRADED,
+                    previous_source=before.source.value,
+                    current_source=after.source.value,
+                ))
+            continue
+
+        if _is_noise(name, before.value, after.value):
+            continue
+
+        kind = ChangeKind.CORRECTED if better_source else ChangeKind.VALUE_CHANGED
+        changes.append(ProfileChange(
+            field=name, label=label, previous=before.value, current=after.value,
+            kind=kind,
+            previous_source=before.source.value,
+            current_source=after.source.value,
+        ))
 
     return changes
+
+
+def life_events(changes: list[ProfileChange]) -> list[ProfileChange]:
+    """사용자에게 알릴 만한 변화만. 나머지는 조용히 재계산만 한다."""
+    return [c for c in changes if c.is_life_event]
+
+
+def needs_recompute(changes: list[ProfileChange]) -> bool:
+    return any(c.affects_calculation for c in changes)

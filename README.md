@@ -6,8 +6,23 @@
 ```bash
 uv sync --extra mcp --extra dev
 uv run pytest
-uv run python -m ktax.server     # MCP stdio 서버
+
+uv run python -m ktax examples/salaried_33.json          # 시나리오 하나 계산
+uv run python -m ktax examples/salaried_33.json --json   # 기계용 출력
+uv run python -m ktax.server                             # MCP stdio 서버
 ```
+
+## 직접 확인해 보기
+
+`examples/*.json` 을 고쳐서 다시 돌리면 된다. 숫자만으로는 검산이 안 되므로
+적용한 규칙(`·`)과 가정(`~`)을 전부 함께 찍는다.
+
+- `salaried_33.json` — 값을 직접 채운 형태
+- `collected_partial.json` — 간소화자료·원천징수영수증에서 수집한 형태.
+  자료 부족으로 판단할 수 없는 항목이 무엇인지 함께 보여준다
+
+`--view` 로 정렬을 바꾼다: `value`(현재가치 순), `quick_wins`(노력이 가벼운 순),
+`set_and_forget`(한 번 세팅하면 매년 자동), `urgent`(마감 임박).
 
 ## 왜 이 구조인가
 
@@ -79,6 +94,27 @@ uv run python -m ktax.server     # MCP stdio 서버
 
 실제 커넥터(홈택스, 마이데이터)는 인증과 기관 허가가 필요해 도구 계층 밖이다.
 매핑(`HOMETAX_CATEGORY_MAP`)은 커넥터가 붙기 전에도 확정해 둘 수 있어 먼저 만들었다.
+
+## 변화 감지: 실제 변화와 데이터 정정을 가른다
+
+자동 수집을 쓰면 값이 달라지는 이유가 둘로 갈린다. 사용자의 상황이 실제로 바뀌었거나
+(이직, 출산), 더 정확한 자료를 확보했거나(어림값 → 간소화자료). 이 둘을 합치면
+"소득이 늘었네요"라고 알림이 나가는데 사실은 제대로 된 자료를 처음 본 것뿐일 수 있다.
+알림 한 번 잘못 나가면 사용자는 알림을 끄고, 그러면 정작 중요한 순간에 닿지 못한다.
+
+`diff_profile_data` 는 변화를 다섯으로 나눈다.
+
+| 종류 | 뜻 | 알림 | 재계산 |
+|------|-----|-----|-------|
+| `value_changed` | 같은 권위의 출처가 다른 값 — 생활 사건 | O | O |
+| `corrected` | 더 나은 출처가 다른 값 — 데이터 정정 | X | O |
+| `enriched` | 몰랐던 값을 새로 확보 | X | O |
+| `source_upgraded` | 값은 같고 출처만 개선 | X | X |
+| `lost` | 있던 값이 사라짐 | X | O |
+
+`life_events()` 로 알릴 것만 걸러내고 `needs_recompute()` 로 다시 계산할지 정한다.
+출처를 모르는 `Profile` 두 개를 비교하는 `diff_snapshots` 도 남아 있지만, 자동 수집을
+쓴다면 출처 없이는 실제 변화와 정정을 구분할 수 없다.
 
 ## 액션 카탈로그
 

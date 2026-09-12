@@ -313,3 +313,42 @@ def how_to_fill(name: str) -> dict[str, Any]:
         "sources": [s.value for s in sources],
         "user_only": name in USER_ONLY_FIELDS,
     }
+
+
+# 사람이 읽을 필드 이름. 알림 문구와 변화 보고에 쓴다.
+FIELD_LABELS: dict[str, str] = {
+    "age": "나이",
+    "filing_type": "신고 유형",
+    "earned_income": "근로소득",
+    "business_income": "사업소득",
+    "financial_income": "금융소득",
+    "other_income": "기타소득",
+    "income_deductions": "소득공제 총액",
+    "tax_credits": "세액공제 총액",
+    "pension_savings_contributed": "연금저축 납입액",
+    "irp_contributed": "IRP 납입액",
+    "isa_contributed_this_year": "올해 ISA 납입액",
+    "isa_contributed_total": "ISA 총 납입액",
+    "isa_preferential": "ISA 서민형 여부",
+    "is_homeless_household_head": "무주택 세대주 여부",
+    "housing_subscription_contributed": "주택청약 납입액",
+    "annual_rent_paid": "연간 월세액",
+    "medical_expenses": "의료비(그 밖의 부양가족)",
+    "medical_expenses_unlimited": "의료비(본인·65세 이상·장애인 등)",
+    "medical_expenses_fertility": "난임시술비",
+    "medical_expenses_premature": "미숙아·선천성이상아 의료비",
+    "donations": "기부금",
+    "credit_card_spending": "신용카드 사용액",
+    "debit_cash_spending": "체크카드·현금영수증 사용액",
+    "traditional_market_spending": "전통시장 사용액",
+    "public_transit_spending": "대중교통 이용액",
+    "culture_spending": "도서·공연·체육 사용액",
+    "dependent_children": "부양 자녀 수",
+    "sme_employment_start_year": "중소기업 취업 연도",
+    "sme_special_category": "중소기업 감면 특례 대상",
+    "planned_withdrawal_age": "연금 수령 예정 나이",
+}
+
+
+def label_of(name: str) -> str:
+    return FIELD_LABELS.get(name, name)

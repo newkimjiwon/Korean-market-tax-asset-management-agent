@@ -1,0 +1,26 @@
+{
+  "year": 2025,
+  "profile": {
+    "age": 33,
+    "earned_income": 52000000,
+    "income_deductions": 9000000,
+    "financial_income": 3000000,
+    "is_homeless_household_head": true,
+    "annual_rent_paid": 8400000,
+    "housing_subscription_contributed": 1200000,
+    "pension_savings_contributed": 2400000,
+    "irp_contributed": 0,
+    "medical_expenses": 800000,
+    "medical_expenses_unlimited": 2000000,
+    "donations": 400000,
+    "dependent_children": 1,
+    "credit_card_spending": 22000000,
+    "debit_cash_spending": 4000000,
+    "traditional_market_spending": 1200000,
+    "public_transit_spending": 800000,
+    "culture_spending": 600000,
+    "isa_contributed_this_year": 0,
+    "isa_contributed_total": 0,
+    "sme_employment_start_year": 2024
+  }
+}

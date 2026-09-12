@@ -1,0 +1,28 @@
+{
+  "year": 2025,
+  "records": [
+    {
+      "source": "hometax_simplified",
+      "as_of": "2026-01-20",
+      "categories": {
+        "신용카드": 22000000,
+        "직불카드등": 3000000,
+        "현금영수증": 1000000,
+        "전통시장": 1200000,
+        "대중교통": 800000,
+        "기부금": 400000,
+        "월세액": 8400000
+      }
+    },
+    {
+      "source": "withholding_receipt",
+      "as_of": "2026-01-15",
+      "values": { "earned_income": 52000000, "income_deductions": 9000000 }
+    },
+    {
+      "source": "user",
+      "as_of": "2026-01-01",
+      "values": { "age": 33, "sme_employment_start_year": null }
+    }
+  ]
+}

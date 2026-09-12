@@ -133,6 +133,16 @@ class BenefitStream:
     # 스트림이 끝나는 조건. 둘 중 하나만 주면 된다.
     explicit_years: int | None = None
     ends_at_age: int | None = None
+    # 효과가 매년 이어질 확률. 하드 컷("10년째까지 100%, 11년째부터 0%")은
+    # 현실의 어떤 것도 그렇게 작동하지 않으므로, 불확실성을 절벽이 아니라
+    # 매끄러운 감쇠로 표현한다. 1.0 = 확정된 기간(불확실성 없음).
+    persistence: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.persistence <= 1.0:
+            raise ValueError(
+                f"persistence 는 (0, 1] 범위여야 합니다: {self.persistence}"
+            )
 
 
 @dataclass(frozen=True)

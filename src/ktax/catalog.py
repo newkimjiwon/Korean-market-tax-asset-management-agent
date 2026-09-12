@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from ktax.assumptions import persistence_for, persistence_note
 from ktax.models import (
     Action,
     BenefitStream,
@@ -388,6 +389,26 @@ def donation_credit(profile: Profile, year: int) -> Evaluation:
 # 진입점
 # --------------------------------------------------------------------------
 
+
+def _with_persistence(action: Action) -> Action:
+    """액션의 효과 스트림에 항목별 지속확률을 입히고 근거에 명시한다.
+
+    각 평가 함수가 개별적으로 챙기게 하면 빠뜨리는 곳이 생긴다.
+    진입점에서 일괄 적용해 누락을 구조적으로 막는다.
+    """
+    from dataclasses import replace
+
+    p = persistence_for(action.key)
+    return replace(
+        action,
+        benefit=replace(action.benefit, persistence=p),
+        rationale=replace(
+            action.rationale,
+            assumptions=[*action.rationale.assumptions, persistence_note(action.key)],
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class Discovery:
     applicable: list[Action]
@@ -408,7 +429,7 @@ def discover_actions(profile: Profile, year: int) -> Discovery:
         if isinstance(result, Ineligible):
             ineligible.append(result)
         elif result.benefit.amount_per_year > 0:
-            applicable.append(result)
+            applicable.append(_with_persistence(result))
         else:
             ineligible.append(
                 Ineligible(result.key, result.title, "계산된 절감액이 0원입니다.")

@@ -19,10 +19,9 @@ def test_horizon_derives_from_age_not_a_fixed_constant():
     young = resolve_horizon(stream, profile(30))
     old = resolve_horizon(stream, profile(50))
 
+    assert young.years == 25
     assert old.years == 5
-    assert young.years == DEFAULT_HORIZON_CAP_YEARS  # 25년이지만 상한에서 절삭
-    assert young.capped
-    assert not old.capped
+    assert not young.capped and not old.capped
 
 
 def test_horizon_is_capped_to_avoid_false_precision():
@@ -75,7 +74,12 @@ def test_annual_equivalent_uses_common_horizon():
 
     assert ot.comparison_horizon_years == rc.comparison_horizon_years
     assert rc.annual_equivalent > ot.annual_equivalent
-    assert rc.annual_equivalent == 1_000_000  # 지평 전체를 채우면 원래 금액으로 돌아온다
+
+    # 지평이 공통 비교 지평과 정확히 일치하면 원래 금액으로 돌아온다.
+    exact = BenefitStream(
+        amount_per_year=1_000_000, recurrence=Recurrence.RECURRING, ends_at_age=55
+    )
+    assert value_benefit(exact, profile(45)).annual_equivalent == 1_000_000
 
 
 def test_future_benefit_is_discounted():

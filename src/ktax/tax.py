@@ -90,6 +90,38 @@ def estimate_tax(profile: Profile, year: int) -> TaxEstimate:
 
 
 # --------------------------------------------------------------------------
+# 절감액 원시 계산
+#
+# 소득공제와 세액공제는 계산 방식이 근본적으로 다르다.
+# 소득공제는 과세표준을 줄이므로 한계세율에 비례하고(= 고소득자에게 더 유리),
+# 세액공제는 세액을 직접 줄이므로 소득과 무관하게 정해진 율이 적용된다.
+# 이 둘을 섞으면 액션 간 비교가 전부 틀어진다.
+# --------------------------------------------------------------------------
+
+def income_deduction_saving(profile: Profile, year: int, deduction: Won) -> Won:
+    """소득공제 절감액.
+
+    한계세율을 곱하지 않고 실제로 두 번 계산해서 차분한다. 공제액이 구간
+    경계를 걸치면 단일 한계세율을 곱한 값이 틀리기 때문이다.
+    """
+    rules = load_ruleset(year)
+    base = profile.taxable_base()
+    before = gross_income_tax(base, year)
+    after = gross_income_tax(max(0, base - max(0, deduction)), year)
+    diff = max(0, before - after)
+    return diff + round(diff * rules["local_income_tax_rate"])
+
+
+def tax_credit_saving(profile: Profile, year: int, credit: Won) -> Won:
+    """세액공제 절감액. 산출세액을 넘는 공제는 버려지므로 상한을 둔다."""
+    rules = load_ruleset(year)
+    gross = gross_income_tax(profile.taxable_base(), year)
+    headroom = max(0, gross - profile.tax_credits)
+    effective = min(max(0, credit), headroom)
+    return effective + round(effective * rules["local_income_tax_rate"])
+
+
+# --------------------------------------------------------------------------
 # 액션 시뮬레이터
 # --------------------------------------------------------------------------
 

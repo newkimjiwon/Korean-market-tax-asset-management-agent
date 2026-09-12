@@ -93,6 +93,19 @@ class Profile:
     isa_contributed_total: Won = 0
     isa_preferential: bool = False         # 서민형/농어민형 여부
 
+    # 주거
+    is_homeless_household_head: bool = False   # 무주택 세대주
+    housing_subscription_contributed: Won = 0  # 올해 주택청약종합저축 납입액
+    annual_rent_paid: Won = 0                  # 올해 지출한 월세 총액
+
+    # 지출 기반 공제
+    medical_expenses: Won = 0
+    donations: Won = 0
+
+    # 중소기업 취업자 감면
+    sme_employment_start_year: int | None = None
+    sme_special_category: bool = False         # 60세 이상/장애인/경력단절여성
+
     # 지평 계산용
     planned_withdrawal_age: int | None = None
 

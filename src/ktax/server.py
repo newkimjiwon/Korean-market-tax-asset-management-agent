@@ -26,6 +26,7 @@ from ktax.models import (
     Rationale,
     Recurrence,
 )
+from ktax.catalog import catalog_keys, discover_actions as _discover
 from ktax.monitor import diff_snapshots, evaluate_thresholds
 from ktax.rules import available_years, load_ruleset
 from ktax.scoring import (
@@ -129,6 +130,55 @@ def simulate_isa(
         "benefit": asdict(sim.benefit),
         "rationale": _rationale_dict(sim.rationale),
     }
+
+
+# --------------------------------------------------------------------------
+# 카탈로그
+# --------------------------------------------------------------------------
+
+@server.tool()
+def recommend_actions(
+    profile: dict[str, Any], year: int, view: str = "value"
+) -> dict[str, Any]:
+    """이 사람이 지금 할 수 있는 절세 액션을 찾아 순위를 매긴다.
+
+    카탈로그 전체를 프로필에 대해 평가하고 가치·노력·사분면·마감을 붙여
+    돌려준다. 대부분의 경우 이 도구 하나면 충분하다.
+
+    view:
+      - "value":          현재가치 순. 시간이 충분할 때
+      - "quick_wins":     노력이 가벼운 순. 지금 5분뿐일 때
+      - "set_and_forget": 1회 세팅 → 매년 자동인 것만
+      - "urgent":         마감 임박 오버레이
+
+    `ineligible` 에는 자격 미달 항목이 사유와 함께 담긴다. 사용자가
+    "왜 나는 이게 안 뜨죠?"라고 물으면 여기서 답을 찾을 수 있다.
+    """
+    p = _profile(profile)
+    discovery = _discover(p, year)
+    scored = score_actions(discovery.applicable, p)
+
+    views = {
+        "value": sort_by_value,
+        "quick_wins": sort_by_quick_wins,
+        "set_and_forget": set_and_forget,
+        "urgent": urgent,
+    }
+    if view not in views:
+        raise ValueError(f"알 수 없는 view: {view}. 가능: {', '.join(views)}")
+
+    return {
+        "actions": [s.to_dict() for s in views[view](scored)],
+        "ineligible": [i.to_dict() for i in discovery.ineligible],
+        "view": view,
+        "year": year,
+    }
+
+
+@server.tool()
+def list_catalog() -> list[str]:
+    """카탈로그에 등록된 액션 종류. 어떤 절세 항목을 다루는지 확인할 때 쓴다."""
+    return catalog_keys()
 
 
 # --------------------------------------------------------------------------

@@ -56,7 +56,7 @@ def resolve_horizon(
     candidates: list[tuple[int, str]] = []
 
     if stream.explicit_years is not None:
-        candidates.append((stream.explicit_years, f"상품 약정 {stream.explicit_years}년"))
+        candidates.append((stream.explicit_years, f"잔여 기간 {stream.explicit_years}년"))
 
     if stream.ends_at_age is not None:
         remaining = stream.ends_at_age - profile.age

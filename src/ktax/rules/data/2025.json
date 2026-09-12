@@ -1,0 +1,42 @@
+{
+  "year": 2025,
+  "verified": false,
+  "source_note": "국세청/조세특례제한법 기준으로 반드시 재확인 후 verified=true 로 바꿀 것. 이 값들은 초기 스캐폴딩용 기본값이며 실제 신고에 그대로 쓰면 안 됨.",
+
+  "income_tax_brackets": [
+    { "upper": 14000000,   "rate": 0.06, "progressive_deduction": 0 },
+    { "upper": 50000000,   "rate": 0.15, "progressive_deduction": 1260000 },
+    { "upper": 88000000,   "rate": 0.24, "progressive_deduction": 5760000 },
+    { "upper": 150000000,  "rate": 0.35, "progressive_deduction": 15440000 },
+    { "upper": 300000000,  "rate": 0.38, "progressive_deduction": 19940000 },
+    { "upper": 500000000,  "rate": 0.40, "progressive_deduction": 25940000 },
+    { "upper": 1000000000, "rate": 0.42, "progressive_deduction": 35940000 },
+    { "upper": null,       "rate": 0.45, "progressive_deduction": 65940000 }
+  ],
+
+  "local_income_tax_rate": 0.1,
+
+  "pension_account": {
+    "pension_savings_limit": 6000000,
+    "combined_limit_with_irp": 9000000,
+    "credit_rate_low_income": 0.15,
+    "credit_rate_high_income": 0.12,
+    "low_income_earned_income_ceiling": 55000000,
+    "low_income_comprehensive_income_ceiling": 45000000,
+    "withdrawal_start_age": 55
+  },
+
+  "isa": {
+    "annual_contribution_limit": 20000000,
+    "total_contribution_limit": 100000000,
+    "tax_free_limit_general": 2000000,
+    "tax_free_limit_preferential": 4000000,
+    "separate_tax_rate": 0.099,
+    "minimum_holding_years": 3
+  },
+
+  "financial_income": {
+    "comprehensive_taxation_threshold": 20000000,
+    "withholding_rate": 0.154
+  }
+}

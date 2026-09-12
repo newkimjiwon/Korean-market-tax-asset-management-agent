@@ -1,7 +1,6 @@
 {
   "year": 2025,
-  "verified": false,
-  "source_note": "국세청/조세특례제한법 기준으로 반드시 재확인 후 verified=true 로 바꿀 것. 이 값들은 초기 스캐폴딩용 기본값이며 실제 신고에 그대로 쓰면 안 됨.",
+  "verified": true,
   "income_tax_brackets": [
     {
       "upper": 14000000,
@@ -96,5 +95,34 @@
     "other_reduction_rate": 0.7,
     "other_duration_years": 3,
     "annual_cap": 2000000
+  },
+  "verified_on": "2026-09-13",
+  "verification": {
+    "method": "법령 원문(law.go.kr) 및 국세청 자료 대조. 2차 자료가 엇갈린 항목은 법령 원문을 기준으로 삼음.",
+    "sources": [
+      "https://www.law.go.kr/법령/소득세법/제55조",
+      "https://www.law.go.kr/LSW//lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=1000852480&lsId=001584&print=print",
+      "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875",
+      "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7874",
+      "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=40632&cntntsId=239023"
+    ],
+    "checked": {
+      "income_tax_brackets": "소득세법 제55조. 법령의 누적액 형태(예: 5,000만 초과 시 624만원+24%)를 누진공제 형태로 환산해 8개 구간 전부 일치 확인.",
+      "local_income_tax_rate": "지방소득세 = 소득세의 10%. 금융소득 원천징수 15.4%(=14%×1.1)로 교차 확인.",
+      "pension_account": "조세특례제한법 제86조의4. 연금저축 600만/IRP 합산 900만, 종합소득금액 4,500만(총급여 5,500만) 기준 15%/12%.",
+      "isa": "연 2,000만/총 1억, 일반형 200만·서민형 400만 비과세, 초과분 9.9% 분리과세, 의무가입 3년.",
+      "financial_income": "이자·배당 합계 2,000만원 초과 시 종합과세. 이하는 15.4% 원천징수 분리과세.",
+      "housing_subscription": "무주택 세대주·총급여 7,000만 이하, 납입한도 300만원(2024년 240만→300만 상향)의 40% 소득공제.",
+      "monthly_rent": "총급여 8,000만 이하, 한도 1,000만원, 총급여 5,500만 기준 17%/15%. 최대 환급 170만원으로 교차 확인.",
+      "medical_expense": "총급여 3% 초과분, 공제율 15%, 일반 한도 700만원.",
+      "donation": "1,000만원 이하 15%, 초과분 30%.",
+      "sme_employment_reduction": "조세특례제한법 제30조. 청년(15~34세) 90%·5년, 60세 이상·장애인·경력단절 70%·3년, 과세기간별 한도는 양쪽 모두 200만원. 일부 2차 자료의 150만원은 개정 전 수치."
+    },
+    "known_gaps": [
+      "금융소득 2,000만원 초과분의 종합과세 합산은 미구현 (evaluate_thresholds 로 경계 판정만 제공)",
+      "의료비 난임시술비 고율(20%) 및 본인·65세 이상·장애인 한도 예외 미반영",
+      "기부금 소득금액 대비 공제 한도 미반영",
+      "신용카드 등 사용금액 소득공제 미구현"
+    ]
   }
 }

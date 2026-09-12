@@ -53,10 +53,44 @@ def test_estimate_tax_never_negative():
     assert estimate_tax(p, YEAR).income_tax == 0
 
 
-def test_rationale_flags_unverified_ruleset():
+def test_2025_ruleset_is_verified():
+    """검증을 마친 연도는 출처 기록을 갖는다."""
+    rules = load_ruleset(YEAR)
+    assert rules["verified"] is True
+    assert rules["verification"]["sources"]
+    assert len(rules["verification"]["checked"]) >= 10
+
+
+def test_verified_ruleset_emits_no_warning():
     p = Profile(age=40, earned_income=60_000_000)
-    est = estimate_tax(p, YEAR)
-    assert est.rationale.warnings(), "미검증 세법 데이터는 경고를 달아야 한다"
+    assert estimate_tax(p, YEAR).rationale.warnings() == []
+
+
+def test_unverified_ruleset_still_warns():
+    """경고 메커니즘은 아직 검증하지 않은 연도를 위해 계속 살아 있어야 한다."""
+    from ktax.models import Rationale
+
+    r = Rationale(summary="x", ruleset_year=2099, ruleset_verified=False)
+    assert r.warnings()
+    assert "2099" in r.warnings()[0]
+
+
+@pytest.mark.parametrize(
+    "taxable_base,statutory_tax",
+    [
+        # 소득세법 제55조의 누적액 형태를 그대로 옮긴 값.
+        # 검증을 마친 수치이므로 부주의한 수정이 여기서 걸리게 고정한다.
+        (14_000_000, 840_000),
+        (50_000_000, 6_240_000),
+        (88_000_000, 15_360_000),
+        (150_000_000, 37_060_000),
+        (300_000_000, 94_060_000),
+        (500_000_000, 174_060_000),
+        (1_000_000_000, 384_060_000),
+    ],
+)
+def test_brackets_match_statute(taxable_base, statutory_tax):
+    assert gross_income_tax(taxable_base, YEAR) == statutory_tax
 
 
 def test_pension_credit_rate_switches_on_income():

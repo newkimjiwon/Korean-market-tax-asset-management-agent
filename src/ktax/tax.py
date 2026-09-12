@@ -451,3 +451,108 @@ def credit_card_deduction(profile: Profile, year: int) -> CardDeduction:
             ruleset_verified=ruleset.get("verified", False),
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# 의료비 세액공제 (소득세법 제59조의4 제2항)
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MedicalCredit:
+    credit: Won                  # 세액공제액
+    threshold: Won               # 총급여의 3%
+    eligible_general: Won        # 한도 적용 후 그 밖의 의료비
+    shortfall_applied: Won       # 한도 없는 호에서 차감된 미달분
+    breakdown: dict[str, Won]
+    rationale: Rationale
+
+
+def medical_expense_credit(profile: Profile, year: int) -> MedicalCredit:
+    """의료비 세액공제액.
+
+    3% 기준선은 '그 밖의 의료비'에서 먼저 차감되고, 그것으로 모자라면
+    한도 없는 호(본인·65세 이상·장애인 등, 미숙아, 난임)에서 마저 뺀다.
+    한도(700만원)는 '그 밖의 의료비'에만 붙는다 — 모든 의료비에 씌우면
+    부양가족 의료비가 큰 납세자의 공제액이 크게 과소 계산된다.
+    """
+    ruleset = load_ruleset(year)
+    rules = ruleset["medical_expense"]
+    threshold = round(profile.earned_income * rules["income_threshold_rate"])
+
+    general_excess = profile.medical_expenses - threshold
+    if general_excess >= 0:
+        eligible_general = min(general_excess, rules["general_limit"])
+        shortfall = 0
+    else:
+        eligible_general = 0
+        shortfall = -general_excess
+
+    # 미달분은 공제율이 낮은 호부터 소진시킨다. 총액에서 1회만 차감한다.
+    buckets = [
+        ("본인·65세이상·장애인 등", profile.medical_expenses_unlimited, rules["credit_rate"]),
+        ("난임시술비", profile.medical_expenses_fertility, rules["credit_rate_fertility"]),
+        ("미숙아·선천성이상아", profile.medical_expenses_premature, rules["credit_rate_premature"]),
+    ]
+    buckets.sort(key=lambda b: b[2])
+
+    shortfall_applied = 0
+    credit = round(eligible_general * rules["credit_rate"])
+    breakdown = {"그 밖의 의료비": round(eligible_general * rules["credit_rate"])}
+
+    remaining_shortfall = shortfall
+    for name, amount, rate in buckets:
+        consumed = min(amount, remaining_shortfall)
+        remaining_shortfall -= consumed
+        shortfall_applied += consumed
+        part = round((amount - consumed) * rate)
+        credit += part
+        if amount:
+            breakdown[name] = part
+
+    total_spent = (
+        profile.medical_expenses
+        + profile.medical_expenses_unlimited
+        + profile.medical_expenses_fertility
+        + profile.medical_expenses_premature
+    )
+    if credit <= 0:
+        summary = (
+            f"의료비 {total_spent:,}원이 기준선 {threshold:,}원"
+            f"(총급여의 {rules['income_threshold_rate']:.0%})을 넘지 못해 공제액이 없습니다"
+        )
+    else:
+        summary = f"의료비 세액공제 {credit:,}원"
+
+    applied = [
+        f"기준금액 = 총급여 × {rules['income_threshold_rate']:.0%} = {threshold:,}원",
+        f"그 밖의 의료비만 연 {rules['general_limit']:,}원 한도, "
+        f"본인·65세 이상·장애인·미숙아·난임은 한도 없음",
+        f"공제율 {rules['credit_rate']:.0%} "
+        f"(난임 {rules['credit_rate_fertility']:.0%}, "
+        f"미숙아·선천성이상아 {rules['credit_rate_premature']:.0%})",
+    ]
+    assumptions = []
+    if shortfall_applied:
+        applied.append(
+            f"그 밖의 의료비가 기준금액에 미달해 {shortfall_applied:,}원을 "
+            f"한도 없는 호에서 차감"
+        )
+        assumptions.append(
+            "조문은 각 호마다 미달분 차감 단서를 두지만, 중복 차감은 입법 취지에 "
+            "맞지 않아 총액에서 1회만 차감했습니다 (연말정산 실무와 동일)"
+        )
+
+    return MedicalCredit(
+        credit=credit,
+        threshold=threshold,
+        eligible_general=eligible_general,
+        shortfall_applied=shortfall_applied,
+        breakdown=breakdown,
+        rationale=Rationale(
+            summary=summary,
+            applied_rules=applied,
+            assumptions=assumptions,
+            ruleset_year=year,
+            ruleset_verified=ruleset.get("verified", False),
+        ),
+    )

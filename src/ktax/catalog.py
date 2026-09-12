@@ -28,6 +28,7 @@ from ktax.rules import load_ruleset
 from ktax.tax import (
     credit_card_deduction,
     income_deduction_saving,
+    medical_expense_credit as _compute_medical_credit,
     simulate_isa_contribution,
     simulate_pension_contribution,
     tax_credit_saving,
@@ -383,26 +384,36 @@ def monthly_rent_credit(profile: Profile, year: int) -> Evaluation:
 
 @entry
 def medical_expense_credit(profile: Profile, year: int) -> Evaluation:
-    """의료비 세액공제 — 총급여 3% 초과분만 대상."""
+    """의료비 세액공제 — 총급여 3% 초과분만 대상.
+
+    한도(700만원)는 '그 밖의 의료비'에만 붙는다. 본인·65세 이상·장애인·
+    미숙아·난임 의료비는 한도가 없다.
+    """
     key, title = "medical_expense_credit", "의료비 세액공제"
     rules = load_ruleset(year)["medical_expense"]
 
-    if profile.medical_expenses <= 0:
+    spent = (
+        profile.medical_expenses
+        + profile.medical_expenses_unlimited
+        + profile.medical_expenses_fertility
+        + profile.medical_expenses_premature
+    )
+    if spent <= 0:
         return Ineligible(key, title, "의료비 지출 내역이 없습니다.")
 
-    floor = round(profile.earned_income * rules["income_threshold_rate"])
-    excess = profile.medical_expenses - floor
-    if excess <= 0:
+    computed = _compute_medical_credit(profile, year)
+    if computed.credit <= 0:
         return Ineligible(
             key, title,
-            f"의료비 {profile.medical_expenses:,}원이 공제 기준선 "
-            f"{floor:,}원(총급여의 {rules['income_threshold_rate']:.0%})에 못 미칩니다.",
+            f"의료비 {spent:,}원이 공제 기준선 {computed.threshold:,}원"
+            f"(총급여의 {rules['income_threshold_rate']:.0%})에 못 미칩니다.",
         )
 
-    eligible = min(excess, rules["general_limit"])
-    credit = round(eligible * rules["credit_rate"])
-    saving = tax_credit_saving(profile, year, credit)
+    saving = tax_credit_saving(profile, year, computed.credit)
+    if saving <= 0:
+        return Ineligible(key, title, "산출세액이 없어 세액공제를 받을 수 없습니다.")
 
+    rationale = computed.rationale
     return Action(
         key=key,
         title="의료비 세액공제 신청",
@@ -411,16 +422,9 @@ def medical_expense_credit(profile: Profile, year: int) -> Evaluation:
         effort_recurrence=Recurrence.RECURRING,
         rationale=_rationale(
             year,
-            f"기준선 {floor:,}원 초과분 {eligible:,}원 × {rules['credit_rate']:.0%} "
-            f"→ 연 {saving:,}원 절감",
-            [
-                f"총급여의 {rules['income_threshold_rate']:.0%} 초과분만 공제 대상",
-                f"공제율 {rules['credit_rate']:.0%}, 한도 {rules['general_limit']:,}원",
-            ],
-            [
-                "본인·65세 이상·장애인 의료비의 한도 예외는 반영하지 않았습니다",
-                "난임시술비 등 고율 항목은 별도 계산이 필요합니다",
-            ],
+            f"{rationale.summary} → 연 {saving:,}원 절감",
+            rationale.applied_rules,
+            rationale.assumptions,
         ),
     )
 

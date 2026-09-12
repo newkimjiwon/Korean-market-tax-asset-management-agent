@@ -99,7 +99,12 @@ class Profile:
     annual_rent_paid: Won = 0                  # 올해 지출한 월세 총액
 
     # 지출 기반 공제
-    medical_expenses: Won = 0
+    # 의료비는 한도가 붙는 '그 밖의 의료비'와 한도 없는 호를 구분해 받는다.
+    # 합쳐서 받으면 700만원 한도를 잘못 씌우게 된다.
+    medical_expenses: Won = 0                  # 그 밖의 기본공제대상자 (700만원 한도)
+    medical_expenses_unlimited: Won = 0        # 본인·6세 이하·65세 이상·장애인·중증질환자
+    medical_expenses_fertility: Won = 0        # 난임시술비
+    medical_expenses_premature: Won = 0        # 미숙아·선천성이상아
     donations: Won = 0
 
     # 결제수단별 사용액 (신용카드 등 소득공제)

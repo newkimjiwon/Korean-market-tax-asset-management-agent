@@ -29,6 +29,10 @@ PERSISTENCE: dict[str, float] = {
     # 무주택 세대주 요건이 전제다. 자가 구매 시점에 바로 끊긴다.
     "housing_subscription": 0.90,
 
+    # 습관을 매 결제마다 유지해야 한다. 세팅 한 번으로 끝나는 자동이체보다
+    # 유지 확률이 낮다.
+    "payment_method_switch": 0.85,
+
     # 자가 구매나 전세 전환으로 언제든 끊긴다. 연금저축과 같은
     # 확신도로 취급하면 순위가 왜곡된다.
     "monthly_rent_credit": 0.85,

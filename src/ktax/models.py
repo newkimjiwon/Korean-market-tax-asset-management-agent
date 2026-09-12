@@ -102,6 +102,14 @@ class Profile:
     medical_expenses: Won = 0
     donations: Won = 0
 
+    # 결제수단별 사용액 (신용카드 등 소득공제)
+    credit_card_spending: Won = 0            # 신용카드
+    debit_cash_spending: Won = 0             # 직불·선불카드, 현금영수증
+    traditional_market_spending: Won = 0
+    public_transit_spending: Won = 0
+    culture_spending: Won = 0                # 도서·공연·박물관·체육시설 등
+    dependent_children: int = 0              # 공제 한도 산정용
+
     # 중소기업 취업자 감면
     sme_employment_start_year: int | None = None
     sme_special_category: bool = False         # 60세 이상/장애인/경력단절여성

@@ -107,7 +107,9 @@
       "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7874",
       "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=40632&cntntsId=239023",
       "https://www.law.go.kr/LSW//lsLawLinkInfo.do?lsJoLnkSeq=1000819717&lsId=001565&chrClsCd=010202&print=print",
-      "https://call.nts.go.kr/call/qna/selectQnaInfo.do?mi=1441&ctgId=CTG11775"
+      "https://call.nts.go.kr/call/qna/selectQnaInfo.do?mi=1441&ctgId=CTG11775",
+      "https://www.law.go.kr/LSW/lsLawLinkInfo.do?lsJoLnkSeq=1001060529&chrClsCd=010202&lsId=001584&print=print",
+      "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=585&ccfNo=3&cciNo=5&cnpClsNo=1"
     ],
     "checked": {
       "income_tax_brackets": "소득세법 제55조. 법령의 누적액 형태(예: 5,000만 초과 시 624만원+24%)를 누진공제 형태로 환산해 8개 구간 전부 일치 확인.",
@@ -119,13 +121,38 @@
       "monthly_rent": "총급여 8,000만 이하, 한도 1,000만원, 총급여 5,500만 기준 17%/15%. 최대 환급 170만원으로 교차 확인.",
       "medical_expense": "총급여 3% 초과분, 공제율 15%, 일반 한도 700만원.",
       "donation": "1,000만원 이하 15%, 초과분 30%.",
-      "sme_employment_reduction": "조세특례제한법 제30조. 청년(15~34세) 90%·5년, 60세 이상·장애인·경력단절 70%·3년, 과세기간별 한도는 양쪽 모두 200만원. 일부 2차 자료의 150만원은 개정 전 수치."
+      "sme_employment_reduction": "조세특례제한법 제30조. 청년(15~34세) 90%·5년, 60세 이상·장애인·경력단절 70%·3년, 과세기간별 한도는 양쪽 모두 200만원. 일부 2차 자료의 150만원은 개정 전 수치.",
+      "credit_card": "조세특례제한법 제126조의2. 최저사용금액 총급여 25%, 공제율 신용카드 15%/직불·선불·현금영수증 30%/문화체육 30%(총급여 7천만 이하)/전통시장·대중교통 40%. 최저사용금액은 공제율이 낮은 순서로 차감. 기본한도 7천만 이하 300만·초과 250만이며 자녀 1명 +50만/+25만, 2명 이상 +100만/+50만. 추가한도는 전통시장+대중교통 200만, 총급여 7천만 이하는 문화체육 포함 300만."
     },
     "known_gaps": [
       "배당가산액(Gross-up) 및 배당세액공제 미반영. 둘은 이중과세 조정을 위해 서로 상쇄되므로 한쪽만 넣으면 오히려 부정확해진다. 내국법인 배당을 구분해 받을 수 있게 되면 함께 구현할 것.",
       "의료비 난임시술비 고율(20%) 및 본인·65세 이상·장애인 한도 예외 미반영",
       "기부금 소득금액 대비 공제 한도 미반영",
-      "신용카드 등 사용금액 소득공제 미구현"
+      "신용카드 소비증가분 추가공제는 미반영. 연도마다 도입 여부와 요건이 달라지는 한시 조치다."
     ]
+  },
+  "credit_card": {
+    "minimum_spending_rate": 0.25,
+    "rates": {
+      "credit_card": 0.15,
+      "debit_and_cash_receipt": 0.3,
+      "culture": 0.3,
+      "traditional_market": 0.4,
+      "public_transit": 0.4
+    },
+    "income_threshold": 70000000,
+    "culture_income_ceiling": 70000000,
+    "base_limit_low_income": [
+      3000000,
+      3500000,
+      4000000
+    ],
+    "base_limit_high_income": [
+      2500000,
+      2750000,
+      3000000
+    ],
+    "extra_limit_standard": 2000000,
+    "extra_limit_with_culture": 3000000
   }
 }

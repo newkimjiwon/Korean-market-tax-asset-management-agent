@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from ktax.assumptions import persistence_for, persistence_note
@@ -26,6 +26,7 @@ from ktax.models import (
 )
 from ktax.rules import load_ruleset
 from ktax.tax import (
+    credit_card_deduction,
     income_deduction_saving,
     simulate_isa_contribution,
     simulate_pension_contribution,
@@ -243,6 +244,88 @@ def isa_account(profile: Profile, year: int) -> Evaluation:
         effort_recurrence=Recurrence.ONE_TIME,
         rationale=sim.rationale,
         deadline=_year_end(year),
+    )
+
+
+@entry
+def payment_method_switch(profile: Profile, year: int) -> Evaluation:
+    """결제수단 전환 — 최저사용금액까지만 신용카드, 나머지는 체크카드로.
+
+    최저사용금액은 공제율이 낮은 결제수단부터 차감되므로, 신용카드는
+    딱 최저사용금액만큼만 쓰고 나머지를 체크카드로 돌리면 공제율 15%가
+    차감에 다 소진되고 30%가 온전히 남는다. 지갑에서 들고 다니는 카드를
+    바꾸는 1회 결정으로 매년 효과가 반복된다.
+    """
+    key, title = "payment_method_switch", "결제수단 전환"
+    rules = load_ruleset(year)["credit_card"]
+
+    if profile.earned_income <= 0:
+        return Ineligible(key, title, "근로소득자만 신용카드 등 소득공제 대상입니다.")
+
+    current = credit_card_deduction(profile, year)
+    minimum = current.minimum_spending
+    total = (
+        profile.credit_card_spending
+        + profile.debit_cash_spending
+        + profile.traditional_market_spending
+        + profile.public_transit_spending
+        + profile.culture_spending
+    )
+
+    if total <= minimum:
+        return Ineligible(
+            key, title,
+            f"총 사용액 {total:,}원이 최저사용금액 {minimum:,}원"
+            f"(총급여의 {rules['minimum_spending_rate']:.0%}) 이하라 공제가 시작되지 않습니다.",
+        )
+    if profile.credit_card_spending <= minimum:
+        return Ineligible(
+            key, title,
+            f"신용카드 사용액 {profile.credit_card_spending:,}원이 이미 최저사용금액 "
+            f"{minimum:,}원 이하라 더 옮길 금액이 없습니다.",
+        )
+
+    # 신용카드를 최저사용금액까지만 쓰고 초과분을 체크카드로 옮긴 경우
+    movable = profile.credit_card_spending - minimum
+    optimal = credit_card_deduction(
+        replace(
+            profile,
+            credit_card_spending=minimum,
+            debit_cash_spending=profile.debit_cash_spending + movable,
+        ),
+        year,
+    )
+
+    delta = optimal.deductible - current.deductible
+    if delta <= 0:
+        return Ineligible(
+            key, title, "이미 공제 한도에 도달해 결제수단을 바꿔도 늘어나지 않습니다."
+        )
+
+    saving = income_deduction_saving(profile, year, delta)
+    if saving <= 0:
+        return Ineligible(key, title, "산출세액이 없어 소득공제 효과가 없습니다.")
+
+    return Action(
+        key=key,
+        title="신용카드 초과분을 체크카드로 전환",
+        benefit=BenefitStream(amount_per_year=saving, recurrence=Recurrence.RECURRING),
+        effort_tier=EffortTier.INSTANT,
+        effort_recurrence=Recurrence.ONE_TIME,
+        rationale=_rationale(
+            year,
+            f"신용카드 초과분 {movable:,}원을 체크카드로 옮기면 공제액이 "
+            f"{current.deductible:,}원 → {optimal.deductible:,}원, 연 {saving:,}원 절감",
+            [
+                f"최저사용금액 {minimum:,}원은 공제율이 낮은 신용카드(15%)부터 차감",
+                f"체크카드·현금영수증 공제율 {rules['rates']['debit_and_cash_receipt']:.0%}",
+                f"기본한도 {current.base_limit:,}원 / 추가한도 {current.extra_limit:,}원",
+            ],
+            [
+                "내년 사용액이 올해와 비슷하다고 가정",
+                "소득공제이므로 절감액은 한계세율에 비례합니다",
+            ],
+        ),
     )
 
 

@@ -342,3 +342,112 @@ def simulate_isa_contribution(
             ruleset_verified=rules.get("verified", False),
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# 신용카드 등 사용금액 소득공제 (조세특례제한법 제126조의2)
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CardDeduction:
+    deductible: Won              # 한도 적용 후 최종 소득공제액
+    gross_deductible: Won        # 한도 적용 전 공제대상금액
+    minimum_spending: Won        # 총급여의 25%
+    base_limit: Won
+    extra_limit: Won
+    rationale: Rationale
+
+
+def _card_buckets(profile: Profile, rules: dict) -> list[tuple[str, Won, float]]:
+    """결제수단별 사용액을 공제율이 낮은 순서로 늘어놓는다.
+
+    이 순서가 결과를 좌우한다. 최저사용금액은 공제율이 낮은 쪽부터 차감되므로,
+    안분해서 빼는 구현은 공제액을 과소 계산한다.
+    """
+    rates = rules["rates"]
+    buckets = [
+        ("신용카드", profile.credit_card_spending, rates["credit_card"]),
+        ("직불·현금영수증", profile.debit_cash_spending, rates["debit_and_cash_receipt"]),
+    ]
+    if profile.earned_income <= rules["culture_income_ceiling"]:
+        buckets.append(("문화체육", profile.culture_spending, rates["culture"]))
+    buckets.append(("전통시장", profile.traditional_market_spending, rates["traditional_market"]))
+    buckets.append(("대중교통", profile.public_transit_spending, rates["public_transit"]))
+    return sorted(buckets, key=lambda b: b[2])
+
+
+_EXTRA_BUCKETS = {"전통시장", "대중교통", "문화체육"}
+
+
+def credit_card_deduction(profile: Profile, year: int) -> CardDeduction:
+    """신용카드 등 사용금액 소득공제액."""
+    ruleset = load_ruleset(year)
+    rules = ruleset["credit_card"]
+    buckets = _card_buckets(profile, rules)
+
+    minimum = round(profile.earned_income * rules["minimum_spending_rate"])
+    total_spending = sum(amount for _, amount, _ in buckets)
+
+    # 최저사용금액을 공제율이 낮은 순서로 소진시킨다.
+    remaining_minimum = minimum
+    gross = 0
+    extra_portion = 0
+    for name, amount, rate in buckets:
+        consumed = min(amount, remaining_minimum)
+        remaining_minimum -= consumed
+        credited = round((amount - consumed) * rate)
+        gross += credited
+        if name in _EXTRA_BUCKETS:
+            extra_portion += credited
+
+    children_index = min(profile.dependent_children, 2)
+    limits = (
+        rules["base_limit_low_income"]
+        if profile.earned_income <= rules["income_threshold"]
+        else rules["base_limit_high_income"]
+    )
+    base_limit = limits[children_index]
+    extra_limit = (
+        rules["extra_limit_with_culture"]
+        if profile.earned_income <= rules["culture_income_ceiling"]
+        else rules["extra_limit_standard"]
+    )
+
+    base_applied = min(gross, base_limit)
+    overflow = gross - base_applied
+    extra_applied = min(overflow, extra_portion, extra_limit)
+    deductible = base_applied + extra_applied
+
+    if total_spending <= minimum:
+        summary = (
+            f"총 사용액 {total_spending:,}원이 최저사용금액 {minimum:,}원"
+            f"(총급여의 {rules['minimum_spending_rate']:.0%}) 이하로 공제액이 없습니다"
+        )
+    else:
+        summary = (
+            f"공제대상금액 {gross:,}원 → 한도 적용 후 {deductible:,}원 소득공제"
+        )
+
+    return CardDeduction(
+        deductible=deductible,
+        gross_deductible=gross,
+        minimum_spending=minimum,
+        base_limit=base_limit,
+        extra_limit=extra_limit,
+        rationale=Rationale(
+            summary=summary,
+            applied_rules=[
+                f"최저사용금액 = 총급여 × {rules['minimum_spending_rate']:.0%} = {minimum:,}원",
+                "최저사용금액은 공제율이 낮은 결제수단부터 차감",
+                f"기본한도 {base_limit:,}원 (자녀 {profile.dependent_children}명 기준)",
+                f"추가한도 {extra_limit:,}원 (전통시장·대중교통"
+                + ("·문화체육" if profile.earned_income <= rules["culture_income_ceiling"] else "")
+                + ")",
+            ],
+            assumptions=[
+                "소비증가분 추가공제는 반영하지 않았습니다 (연도별 한시 조치)",
+            ],
+            ruleset_year=year,
+            ruleset_verified=ruleset.get("verified", False),
+        ),
+    )

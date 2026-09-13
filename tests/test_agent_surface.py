@@ -170,3 +170,17 @@ def test_server_instructions_warn_about_indeterminate():
 
     assert server.instructions
     assert "indeterminate" in server.instructions
+
+
+def test_isa_response_cannot_be_confused_with_salary_settlement():
+    from ktax.server import simulate_isa
+
+    result = simulate_isa({"age": 40}, YEAR, 20_000_000, 0.05,
+                          holding_years=4, existing_net_gain=2_000_000)
+    assert result["tax_scope"] == "investment_holding_period"
+    assert result["holding_years"] == 4
+    assert result["projected_gain"] == 4_000_000
+    assert result["total_saving"] == 220_000
+    assert result["isa_account_tax"] == 396_000
+    assert result["benefit"]["starts_in_years"] == 4
+    assert not {"annual_saving", "baseline_total", "simulated_total"} & result.keys()

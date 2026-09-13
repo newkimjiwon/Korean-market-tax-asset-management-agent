@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from math import isfinite
 
 from ktax.models import BenefitStream, Profile, Rationale, Recurrence, Won
 from ktax.rules import load_ruleset
@@ -200,21 +201,21 @@ def income_deduction_saving(profile: Profile, year: int, deduction: Won) -> Won:
     한계세율을 곱하지 않고 실제로 두 번 계산해서 차분한다. 공제액이 구간
     경계를 걸치면 단일 한계세율을 곱한 값이 틀리기 때문이다.
     """
-    rules = load_ruleset(year)
-    base = taxable_base(profile, year)
-    before = gross_income_tax(base, year)
-    after = gross_income_tax(max(0, base - max(0, deduction)), year)
-    diff = max(0, before - after)
-    return diff + round(diff * rules["local_income_tax_rate"])
+    before = estimate_tax(profile, year)
+    after = estimate_tax(
+        replace(profile, income_deductions=profile.income_deductions + max(0, deduction)),
+        year,
+    )
+    return max(0, before.total - after.total)
 
 
 def tax_credit_saving(profile: Profile, year: int, credit: Won) -> Won:
     """세액공제 절감액. 산출세액을 넘는 공제는 버려지므로 상한을 둔다."""
-    rules = load_ruleset(year)
-    gross, _ = gross_income_tax_for(profile, year)
-    headroom = max(0, gross - profile.tax_credits)
-    effective = min(max(0, credit), headroom)
-    return effective + round(effective * rules["local_income_tax_rate"])
+    before = estimate_tax(profile, year)
+    after = estimate_tax(
+        replace(profile, tax_credits=profile.tax_credits + max(0, credit)), year
+    )
+    return max(0, before.total - after.total)
 
 
 # --------------------------------------------------------------------------
@@ -233,9 +234,13 @@ def simulate_pension_contribution(
     rules = load_ruleset(year)
     pension = rules["pension_account"]
 
-    already = profile.pension_savings_contributed + profile.irp_contributed
+    if type(additional_contribution) is not int or additional_contribution < 0:
+        raise ValueError("추가 납입액은 음수가 아닌 정수 원 단위여야 합니다.")
+    already = min(profile.pension_savings_contributed, pension["pension_savings_limit"]) + profile.irp_contributed
     room = max(0, pension["combined_limit_with_irp"] - already)
     effective = min(additional_contribution, room)
+    to_pension = min(effective, max(0, pension["pension_savings_limit"] - profile.pension_savings_contributed))
+    to_irp = effective - to_pension
 
     if profile.earned_income > 0:
         low_income = profile.earned_income <= pension["low_income_earned_income_ceiling"]
@@ -252,14 +257,16 @@ def simulate_pension_contribution(
         else pension["credit_rate_high_income"]
     )
     credit = round(effective * rate)
-    saving = credit + round(credit * rules["local_income_tax_rate"])
+    saving = tax_credit_saving(profile, year, credit)
 
     baseline = estimate_tax(profile, year)
 
     # 납입은 수령 개시 연령까지 매년 반복 가능하다.
     withdrawal_age = profile.planned_withdrawal_age or pension["withdrawal_start_age"]
 
-    notes = []
+    notes = [f"추가 납입은 연금저축 {to_pension:,}원, IRP {to_irp:,}원으로 배분한다고 가정"]
+    if saving < credit + round(credit * rules["local_income_tax_rate"]):
+        notes.append("공제 가능액 중 남은 세금에서 실제 사용할 수 있는 금액만 절감액에 반영")
     if effective < additional_contribution:
         notes.append(
             f"요청 {additional_contribution:,}원 중 한도 여유 {room:,}원까지만 반영"
@@ -294,57 +301,92 @@ def simulate_pension_contribution(
     )
 
 
-def simulate_isa_contribution(
-    profile: Profile, year: int, additional_contribution: Won, expected_return_rate: float
-) -> ActionSimulation:
-    """ISA 납입의 금융소득 과세 절감 효과.
+@dataclass(frozen=True)
+class ISASimulation:
+    """올해 소득세와 독립적인, 보유기간 전체 투자 세금 비교."""
 
-    일반 계좌였다면 원천징수될 세금과 ISA 내 비과세/분리과세의 차액.
+    normal_account_tax: Won
+    isa_account_tax: Won
+    projected_gain: Won
+    holding_years: int
+    benefit: BenefitStream
+    rationale: Rationale
+    tax_scope: str = "investment_holding_period"
+
+    @property
+    def total_saving(self) -> Won:
+        return self.normal_account_tax - self.isa_account_tax
+
+
+def simulate_isa_contribution(
+    profile: Profile, year: int, additional_contribution: Won, expected_return_rate: float,
+    holding_years: int = 3, existing_net_gain: Won = 0,
+) -> ISASimulation:
+    """추가 납입분을 단리로 운용하는 가정의 보유기간 전체 세금 비교.
+
+    existing_net_gain은 추가 납입분을 제외한 계좌의 종료 시점 예상 순손익.
+    일반계좌 수익은 전액 15.4% 원천징수 대상이라고 가정한다.
     """
     rules = load_ruleset(year)
     isa = rules["isa"]
     fin = rules["financial_income"]
+    if type(additional_contribution) is not int or additional_contribution < 0:
+        raise ValueError("additional_contribution은 0 이상의 정수여야 합니다.")
+    if (type(expected_return_rate) not in (int, float)
+            or not isfinite(expected_return_rate) or not 0 <= expected_return_rate <= 1):
+        raise ValueError("expected_return_rate는 0~1 사이의 유한한 수여야 합니다.")
+    if type(holding_years) is not int or not isa["minimum_holding_years"] <= holding_years <= 100:
+        raise ValueError("holding_years는 의무가입기간 이상, 100 이하의 정수여야 합니다.")
+    if type(existing_net_gain) is not int:
+        raise ValueError("existing_net_gain은 원 단위 정수여야 합니다.")
+    for amount in (profile.isa_contributed_this_year, profile.isa_contributed_total):
+        if type(amount) is not int or amount < 0:
+            raise ValueError("ISA 기존 납입액은 0 이상의 정수여야 합니다.")
 
     annual_room = max(0, isa["annual_contribution_limit"] - profile.isa_contributed_this_year)
     total_room = max(0, isa["total_contribution_limit"] - profile.isa_contributed_total)
     effective = min(additional_contribution, annual_room, total_room)
-
-    gain = round(effective * expected_return_rate)
+    gain = round(effective * expected_return_rate * holding_years)
     tax_free_limit = (
         isa["tax_free_limit_preferential"] if profile.isa_preferential
         else isa["tax_free_limit_general"]
     )
-    taxable_gain = max(0, gain - tax_free_limit)
 
-    isa_tax = round(taxable_gain * isa["separate_tax_rate"])
+    def account_tax(net_gain: Won) -> Won:
+        return round(max(0, net_gain - tax_free_limit) * isa["separate_tax_rate"])
+
+    # 비과세 한도는 계좌 전체에 한 번만 적용한다. 기존 손익에 더해지는
+    # 추가 납입분의 증분 세금만 일반계좌의 추가 투자 세금과 비교한다.
+    isa_tax = account_tax(existing_net_gain + gain) - account_tax(existing_net_gain)
     normal_tax = round(gain * fin["withholding_rate"])
-    saving = max(0, normal_tax - isa_tax)
-
-    baseline = estimate_tax(profile, year)
-
-    return ActionSimulation(
-        baseline_total=baseline.total,
-        simulated_total=baseline.total - saving,
+    saving = normal_tax - isa_tax
+    return ISASimulation(
+        normal_account_tax=normal_tax,
+        isa_account_tax=isa_tax,
+        projected_gain=gain,
+        holding_years=holding_years,
         benefit=BenefitStream(
             amount_per_year=saving,
-            recurrence=Recurrence.RECURRING,
-            explicit_years=isa["minimum_holding_years"],
+            recurrence=Recurrence.ONE_TIME,
+            starts_in_years=holding_years,
         ),
         rationale=Rationale(
             summary=(
-                f"ISA {effective:,}원 납입, 연 수익 {gain:,}원 가정 시 "
-                f"일반계좌 대비 연 {saving:,}원 절감"
+                f"ISA {effective:,}원 추가 납입, {holding_years}년 총 예상 수익 {gain:,}원: "
+                f"일반계좌 대비 기간 전체 예상 절세액 {saving:,}원"
             ),
             applied_rules=[
-                f"비과세 한도 {tax_free_limit:,}원"
-                f"({'서민형' if profile.isa_preferential else '일반형'})",
+                f"계좌 전체 순이익 비과세 한도 {tax_free_limit:,}원, 종료 시 한 번 적용",
                 f"초과분 분리과세 {isa['separate_tax_rate']:.1%}",
                 f"일반계좌 원천징수 {fin['withholding_rate']:.1%}",
             ],
             assumptions=[
-                f"기대수익률 {expected_return_rate:.1%}는 사용자가 제시한 가정값이며 "
-                f"보장된 수치가 아님",
-                f"의무가입 {isa['minimum_holding_years']}년 유지 가정",
+                f"연 기대수익률 {expected_return_rate:.1%}, 단리·재투자 없음; 수익 보장 아님",
+                f"추가 납입 외 계좌의 종료 시점 예상 순손익 {existing_net_gain:,}원 가정",
+                "일반계좌 수익 전액이 원천징수 대상인 경우만 비교; 비과세 매매차익·종합과세 제외",
+                "세금 차액은 종료 시점의 1회성 혜택으로 평가; 중간 납세 시점 차이는 미반영",
+                "올해 연말정산 세금·환급액과 독립적인 투자 시나리오",
+                "가입 자격 충족 및 정상 해지 가정; 이월 납입한도·수수료·세법 변경 미반영",
             ],
             ruleset_year=year,
             ruleset_verified=rules.get("verified", False),
@@ -495,13 +537,13 @@ def medical_expense_credit(profile: Profile, year: int) -> MedicalCredit:
         eligible_general = 0
         shortfall = -general_excess
 
-    # 미달분은 공제율이 낮은 호부터 소진시킨다. 총액에서 1회만 차감한다.
+    # 법정 호 순서: 제2호 → 제3호 → 제4호. 각 호는 앞선 호의
+    # 의료비 합계와 기준금액의 차이만 차감하므로 미달분을 중복 차감하지 않는다.
     buckets = [
         ("본인·65세이상·장애인 등", profile.medical_expenses_unlimited, rules["credit_rate"]),
-        ("난임시술비", profile.medical_expenses_fertility, rules["credit_rate_fertility"]),
         ("미숙아·선천성이상아", profile.medical_expenses_premature, rules["credit_rate_premature"]),
+        ("난임시술비", profile.medical_expenses_fertility, rules["credit_rate_fertility"]),
     ]
-    buckets.sort(key=lambda b: b[2])
 
     shortfall_applied = 0
     credit = round(eligible_general * rules["credit_rate"])
@@ -545,9 +587,9 @@ def medical_expense_credit(profile: Profile, year: int) -> MedicalCredit:
             f"그 밖의 의료비가 기준금액에 미달해 {shortfall_applied:,}원을 "
             f"한도 없는 호에서 차감"
         )
-        assumptions.append(
-            "조문은 각 호마다 미달분 차감 단서를 두지만, 중복 차감은 입법 취지에 "
-            "맞지 않아 총액에서 1회만 차감했습니다 (연말정산 실무와 동일)"
+        applied.append(
+            "소득세법 제59조의4 제2항: 제3호는 제1·2호 의료비 합계, "
+            "제4호는 제1~3호 의료비 합계의 기준금액 미달분만 차감"
         )
 
     return MedicalCredit(

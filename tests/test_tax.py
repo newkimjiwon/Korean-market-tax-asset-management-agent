@@ -53,17 +53,19 @@ def test_estimate_tax_never_negative():
     assert estimate_tax(p, YEAR).income_tax == 0
 
 
-def test_2025_ruleset_is_verified():
-    """검증을 마친 연도는 출처 기록을 갖는다."""
+def test_2025_ruleset_requires_recheck_after_discovered_data_error():
+    """일부 항목 재검증을 전체 연도의 검증 완료로 확대하지 않는다."""
     rules = load_ruleset(YEAR)
-    assert rules["verified"] is True
+    assert rules["verified"] is False
+    assert rules["verification"]["status"] == "partial_recheck"
+    assert rules["verification"]["rechecked"]["medical_expense"]["sources"]
     assert rules["verification"]["sources"]
     assert len(rules["verification"]["checked"]) >= 10
 
 
-def test_verified_ruleset_emits_no_warning():
+def test_ruleset_under_recheck_warns_in_actual_calculation():
     p = Profile(age=40, earned_income=60_000_000)
-    assert estimate_tax(p, YEAR).rationale.warnings() == []
+    assert estimate_tax(p, YEAR).rationale.warnings()
 
 
 def test_unverified_ruleset_still_warns():
@@ -118,15 +120,90 @@ def test_pension_benefit_ends_at_withdrawal_age():
     assert sim.benefit.ends_at_age == 55
 
 
-def test_isa_saving_is_zero_within_tax_free_limit():
-    """수익이 비과세 한도 안이면 ISA 절감액은 원천징수분 전액이다."""
-    p = Profile(age=40, earned_income=60_000_000)
-    sim = simulate_isa_contribution(p, YEAR, 20_000_000, expected_return_rate=0.05)
-    gain = 1_000_000  # 비과세 한도 200만원 이하
-    assert sim.annual_saving == round(gain * 0.154)
+def test_isa_applies_exemption_once_over_holding_period():
+    sim = simulate_isa_contribution(Profile(age=40), YEAR, 20_000_000, 0.05)
+    assert sim.projected_gain == 3_000_000
+    assert sim.normal_account_tax == 462_000
+    assert sim.isa_account_tax == 99_000
+    assert sim.total_saving == 363_000
+    assert sim.benefit.recurrence.value == "one_time"
+    assert sim.benefit.starts_in_years == 3
+    assert sim.benefit.explicit_years is None
+
+
+def test_isa_is_independent_of_current_income_tax():
+    empty = simulate_isa_contribution(Profile(age=40), YEAR, 20_000_000, 0.05)
+    salaried = simulate_isa_contribution(Profile(age=40, earned_income=80_000_000), YEAR, 20_000_000, 0.05)
+    assert empty == salaried
+    assert empty.isa_account_tax >= 0
+
+
+def test_isa_existing_profit_uses_exemption():
+    sim = simulate_isa_contribution(Profile(age=40), YEAR, 20_000_000, 0.05, existing_net_gain=2_000_000)
+    assert sim.isa_account_tax == 297_000
+    assert sim.total_saving == 165_000
+
+
+def test_isa_existing_loss_offsets_incremental_gain():
+    sim = simulate_isa_contribution(Profile(age=40), YEAR, 20_000_000, 0.05, existing_net_gain=-1_000_000)
+    assert sim.isa_account_tax == 0
+    assert sim.total_saving == 462_000
 
 
 def test_isa_respects_annual_limit():
-    p = Profile(age=40, earned_income=60_000_000, isa_contributed_this_year=20_000_000)
-    sim = simulate_isa_contribution(p, YEAR, 10_000_000, expected_return_rate=0.05)
-    assert sim.annual_saving == 0
+    p = Profile(age=40, isa_contributed_this_year=20_000_000)
+    sim = simulate_isa_contribution(p, YEAR, 10_000_000, 0.05)
+    assert sim.total_saving == 0
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"additional_contribution": -1}, {"additional_contribution": True},
+    {"expected_return_rate": float("nan")}, {"expected_return_rate": float("inf")},
+    {"expected_return_rate": -0.1}, {"expected_return_rate": True},
+    {"holding_years": 2}, {"holding_years": True}, {"existing_net_gain": 1.5},
+])
+def test_isa_rejects_invalid_forecast_inputs(kwargs):
+    inputs = dict(additional_contribution=1_000_000, expected_return_rate=0.05)
+    inputs.update(kwargs)
+    with pytest.raises(ValueError):
+        simulate_isa_contribution(Profile(age=40), YEAR, **inputs)
+
+
+def test_pension_cannot_refund_more_than_remaining_tax():
+    p=Profile(age=40, earned_income=1_000_000)
+    sim=simulate_pension_contribution(p,YEAR,9_000_000)
+    assert sim.baseline_total==66_000
+    assert sim.annual_saving==66_000
+    assert sim.simulated_total==0
+
+
+def test_pension_does_not_offset_separately_taxed_financial_income():
+    p=Profile(age=40,earned_income=0,financial_income=10_000_000)
+    sim=simulate_pension_contribution(p,YEAR,9_000_000)
+    assert sim.annual_saving==0
+    assert sim.simulated_total==1_540_000
+
+
+def test_excess_pension_savings_does_not_consume_irp_credit_room():
+    p=Profile(age=40,earned_income=60_000_000,pension_savings_contributed=8_000_000)
+    sim=simulate_pension_contribution(p,YEAR,3_000_000)
+    assert sim.annual_saving==396_000  # IRP 300만원 × 12% × 1.1
+    assert any('IRP 3,000,000원' in x for x in sim.rationale.assumptions)
+
+
+@pytest.mark.parametrize('amount',[-1,True,1.5])
+def test_invalid_additional_pension_contribution_rejected(amount):
+    with pytest.raises(ValueError):
+        simulate_pension_contribution(Profile(age=40),YEAR,amount)
+
+
+def test_income_deduction_does_not_save_tax_already_eliminated_by_credits():
+    from ktax.tax import income_deduction_saving
+    p=Profile(age=40,earned_income=10_000_000,tax_credits=600_000)
+    assert income_deduction_saving(p,YEAR,1_000_000)==0
+
+
+def test_income_deduction_respects_financial_comparative_tax_floor():
+    from ktax.tax import income_deduction_saving
+    p=Profile(age=40,financial_income=25_000_000)
+    assert income_deduction_saving(p,YEAR,1_000_000)==0

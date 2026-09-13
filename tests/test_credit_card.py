@@ -104,15 +104,15 @@ def test_culture_spending_ignored_above_income_ceiling():
     "salary,children,expected",
     [
         (50_000_000, 0, 3_000_000),
-        (50_000_000, 1, 3_500_000),
-        (50_000_000, 2, 4_000_000),
-        (50_000_000, 3, 4_000_000),   # 2명 이상은 동일
+        (50_000_000, 1, 3_000_000),
+        (50_000_000, 2, 3_000_000),
+        (50_000_000, 3, 3_000_000),   # 2명 이상은 동일
         (80_000_000, 0, 2_500_000),
-        (80_000_000, 1, 2_750_000),
-        (80_000_000, 2, 3_000_000),
+        (80_000_000, 1, 2_500_000),
+        (80_000_000, 2, 2_500_000),
     ],
 )
-def test_base_limit_by_salary_and_children(salary, children, expected):
+def test_2025_base_limit_does_not_apply_2026_child_increase(salary, children, expected):
     p = spender(earned_income=salary, dependent_children=children)
     assert credit_card_deduction(p, YEAR).base_limit == expected
 

@@ -90,19 +90,19 @@ def test_full_threshold_deducted_when_no_general_expenses():
     assert m.credit == round((5_000_000 - FLOOR) * 0.15)
 
 
-def test_shortfall_consumes_the_lowest_rate_bucket_first():
-    """미달분은 공제율이 낮은 호부터 소진시켜야 납세자에게 유리하다.
-    15% 호를 먼저 깎고 30% 호를 남긴다."""
+def test_shortfall_follows_statutory_category_order():
+    """제3호는 제1·2호 합계의 미달분만 차감한다.
+    제2호 15% 의료비에서 미달분을 먼저 차감하고 제3호 20% 의료비를 남긴다."""
     p = patient(medical_expenses=0,
                 medical_expenses_unlimited=2_000_000,
                 medical_expenses_premature=2_000_000)
     m = medical_expense_credit(p, YEAR)
-    # 미달 150만을 15% 호에서 소진 → (200만-150만)×15% + 200만×30%
-    assert m.credit == round(500_000 * 0.15) + round(2_000_000 * 0.30)
+    # 미달 150만을 15% 호에서 소진 → (200만-150만)×15% + 200만×20%
+    assert m.credit == round(500_000 * 0.15) + round(2_000_000 * 0.20)
 
 
 def test_shortfall_is_applied_only_once_across_buckets():
-    """조문은 각 호에 차감 단서를 두지만 중복 차감은 취지에 맞지 않는다."""
+    """제3·4호가 앞선 호의 의료비 합계와 비교하므로 기준선을 중복 차감하지 않는다."""
     p = patient(medical_expenses=0,
                 medical_expenses_unlimited=5_000_000,
                 medical_expenses_fertility=5_000_000,
@@ -125,8 +125,8 @@ def test_shortfall_cannot_exceed_available_expenses():
     "field,rate",
     [
         ("medical_expenses_unlimited", 0.15),
-        ("medical_expenses_fertility", 0.20),
-        ("medical_expenses_premature", 0.30),
+        ("medical_expenses_fertility", 0.30),
+        ("medical_expenses_premature", 0.20),
     ],
 )
 def test_rate_by_category(field, rate):
@@ -140,8 +140,8 @@ def test_fertility_and_premature_beat_the_general_rate():
             patient(medical_expenses=FLOOR, **{field: 5_000_000}), YEAR
         ).credit
 
-    assert credit("medical_expenses_premature") > credit("medical_expenses_fertility")
-    assert credit("medical_expenses_fertility") > credit("medical_expenses_unlimited")
+    assert credit("medical_expenses_fertility") > credit("medical_expenses_premature")
+    assert credit("medical_expenses_premature") > credit("medical_expenses_unlimited")
 
 
 # --------------------------------------------------------------------------
@@ -153,10 +153,11 @@ def test_rationale_states_the_cap_scope():
     assert any("한도 없음" in r for r in m.rationale.applied_rules)
 
 
-def test_rationale_discloses_shortfall_interpretation():
+def test_rationale_explains_statutory_cumulative_shortfall():
     p = patient(medical_expenses=0, medical_expenses_unlimited=8_000_000)
     m = medical_expense_credit(p, YEAR)
-    assert any("1회만 차감" in a for a in m.rationale.assumptions)
+    assert any("제1·2호 의료비 합계" in a for a in m.rationale.applied_rules)
+    assert m.rationale.assumptions == []
 
 
 def test_no_interpretation_note_when_no_shortfall():
@@ -185,3 +186,25 @@ def test_catalog_rejects_below_threshold_with_the_number():
         i for i in discover_actions(p, YEAR).ineligible if i.key == "medical_expense_credit"
     ).reason
     assert "1,500,000" in reason
+
+
+
+def test_all_four_statutory_categories_use_cumulative_shortfall():
+    p = patient(medical_expenses=300_000, medical_expenses_unlimited=400_000,
+                medical_expenses_premature=500_000, medical_expenses_fertility=2_000_000)
+    result = medical_expense_credit(p, YEAR)
+    # 제1~3호 합계 120만원, 기준선 150만원. 난임 200만원에서 잔여 30만원만 차감.
+    assert result.credit == 510_000
+    assert result.breakdown["미숙아·선천성이상아"] == 0
+    assert result.breakdown["난임시술비"] == 510_000
+
+
+def test_medical_discovery_does_not_assume_special_categories_are_zero():
+    values = {"age":45, "earned_income":SALARY,
+              "medical_expenses":0, "medical_expenses_unlimited":0}
+    result = discover_actions(Profile(**values),YEAR,known=frozenset(values))
+    missing = next(x for x in result.indeterminate if x.key == "medical_expense_credit")
+    assert set(missing.missing) == {"medical_expenses_fertility", "medical_expenses_premature"}
+    values.update(medical_expenses_fertility=0, medical_expenses_premature=0)
+    result = discover_actions(Profile(**values),YEAR,known=frozenset(values))
+    assert "medical_expense_credit" in {x.key for x in result.ineligible}

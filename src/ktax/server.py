@@ -234,19 +234,25 @@ def simulate_isa(
     year: int,
     additional_contribution: int,
     expected_return_rate: float,
+    holding_years: int = 3,
+    existing_net_gain: int = 0,
 ) -> dict[str, Any]:
-    """ISA 납입 시 일반계좌 대비 금융소득 과세 절감액을 계산한다.
+    """ISA 추가 납입의 보유기간 전체 투자 세금 비교. 올해 연말정산과 독립적이다.
 
-    expected_return_rate 는 사용자가 제시하는 가정값이다. 이 도구는
-    수익률을 예측하지 않는다.
+    expected_return_rate는 연 단리 가정값이며 수익 예측이 아니다.
+    existing_net_gain은 추가 납입 외 계좌의 종료 시점 예상 순손익이다.
     """
     sim = simulate_isa_contribution(
-        _profile(profile), year, additional_contribution, expected_return_rate
+        _profile(profile), year, additional_contribution, expected_return_rate,
+        holding_years, existing_net_gain,
     )
     return {
-        "annual_saving": sim.annual_saving,
-        "baseline_total": sim.baseline_total,
-        "simulated_total": sim.simulated_total,
+        "tax_scope": sim.tax_scope,
+        "total_saving": sim.total_saving,
+        "normal_account_tax": sim.normal_account_tax,
+        "isa_account_tax": sim.isa_account_tax,
+        "projected_gain": sim.projected_gain,
+        "holding_years": sim.holding_years,
         "benefit": asdict(sim.benefit),
         "rationale": _rationale_dict(sim.rationale),
     }

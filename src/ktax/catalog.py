@@ -98,6 +98,7 @@ REQUIRED_FIELDS: dict[str, frozenset[str]] = {
     }),
     "medical_expense_credit": frozenset({
         "earned_income", "medical_expenses", "medical_expenses_unlimited",
+        "medical_expenses_fertility", "medical_expenses_premature",
     }),
     "donation_credit": frozenset({"earned_income", "donations"}),
 }
@@ -132,7 +133,7 @@ def _rationale(year: int, summary: str, rules_used: list[str], assumptions: list
 def pension_account(profile: Profile, year: int) -> Evaluation:
     """연금저축/IRP 납입 — 자동이체 한 번에 매년 세액공제."""
     rules = load_ruleset(year)["pension_account"]
-    used = profile.pension_savings_contributed + profile.irp_contributed
+    used = min(profile.pension_savings_contributed, rules["pension_savings_limit"]) + profile.irp_contributed
     room = rules["combined_limit_with_irp"] - used
     if room <= 0:
         return Ineligible(
@@ -286,7 +287,11 @@ def isa_account(profile: Profile, year: int) -> Evaluation:
     implied_rate = min(0.15, profile.financial_income / base) if base else 0.03
 
     sim = simulate_isa_contribution(profile, year, room, implied_rate)
-    if sim.annual_saving <= 0:
+    sim.rationale.assumptions.append(
+        "자동 추천은 현재 금융소득에서 수익률을 역산한 가상 시나리오이며, "
+        "기존 계좌 예상 순손익을 0원으로 가정함. 실제 비교는 simulate_isa에 직접 입력 필요"
+    )
+    if sim.total_saving <= 0:
         return Ineligible(key, title, "현재 수익 수준에서는 절감 효과가 없습니다.")
 
     return Action(

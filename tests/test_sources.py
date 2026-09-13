@@ -184,6 +184,7 @@ def test_known_zero_is_correctly_ineligible():
     data = merge(user(
         age=33, earned_income=50_000_000,
         medical_expenses=0, medical_expenses_unlimited=0,
+        medical_expenses_fertility=0, medical_expenses_premature=0,
     ))
     d = discover_actions(data.to_profile(), YEAR, known=data.known())
 

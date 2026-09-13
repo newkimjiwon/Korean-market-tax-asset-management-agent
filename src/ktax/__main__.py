@@ -145,27 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         year, profile, data = _load(raw)
     except (KeyError, TypeError, ValueError, AttributeError):
         return input_error("레거시 프로필 또는 자료 목록의 필드·형식을 확인하세요.")
-    # Dataclasses do not enforce annotations. Reject malformed scalar inputs
-    # before catalog evaluators or arithmetic can consume them.
-    from dataclasses import fields
-
-    for item in fields(Profile):
-        value = getattr(profile, item.name)
-        if item.name == "filing_type":
-            if value not in (FilingType.EARNED, FilingType.COMPREHENSIVE):
-                return input_error("filing_type은 earned 또는 comprehensive입니다.")
-        elif type(item.default) is bool:
-            if type(value) is not bool:
-                return input_error(f"{item.name}은 true/false로 입력하세요.")
-        elif value is None and item.name in {
-            "sme_employment_start_year",
-            "planned_withdrawal_age",
-        }:
-            continue
-        elif type(value) is not int or value < 0:
-            return input_error(f"{item.name}은 음수가 아닌 정수로 입력하세요.")
     known = data.known() if data else frozenset(raw["profile"])
-    discovery = discover_actions(profile, year, known=known)
+    try:
+        discovery = discover_actions(profile, year, known=known)
+    except ValueError as exc:
+        return input_error(str(exc))
     values = {k: v.value for k, v in data.fields.items()} if data else raw["profile"]
     missing = sorted(k for k in BASELINE_INPUT_FIELDS if values.get(k) is None)
     conflicts = bool(data and data.conflicts)

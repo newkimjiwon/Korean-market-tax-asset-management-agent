@@ -421,6 +421,13 @@ def _card_buckets(profile: Profile, rules: dict) -> list[tuple[str, Won, float]]
     ]
     if profile.earned_income <= rules["culture_income_ceiling"]:
         buckets.append(("문화체육", profile.culture_spending, rates["culture"]))
+    elif profile.culture_spending:
+        if profile.culture_credit_card_spending + profile.culture_debit_cash_spending != profile.culture_spending:
+            raise ValueError("고소득자의 문화비는 신용카드·직불현금 결제액 합계가 culture_spending과 같아야 합니다.")
+        buckets.extend([
+            ("신용카드", profile.culture_credit_card_spending, rates["credit_card"]),
+            ("직불·현금영수증", profile.culture_debit_cash_spending, rates["debit_and_cash_receipt"]),
+        ])
     buckets.append(("전통시장", profile.traditional_market_spending, rates["traditional_market"]))
     buckets.append(("대중교통", profile.public_transit_spending, rates["public_transit"]))
     return sorted(buckets, key=lambda b: b[2])

@@ -358,3 +358,21 @@ ISA 응답은 `tax_scope: investment_holding_period`, `total_saving`,
 근거: [KB국민은행 ISA 세제 혜택](https://obank.kbstar.com/quics?page=C041167),
 [미래에셋증권 ISA 가입자격 및 종류](https://trading.securities.miraeasset.com/hks/hks4659/n02.do).
 이는 해당 투자 시나리오의 근거이며 전체 세법 규칙 검증 완료를 뜻하지 않는다.
+
+
+### 주거·문화비 입력 보완
+
+2025년 주택청약 공제는 무주택 세대주 외에 세대주의 배우자도 포함한다.
+`is_homeless_household_head_spouse`로 배우자 자격을 입력하며, 세대주가 아닌데
+배우자 여부를 모르면 추천은 자격 미달 대신 추가 질문을 반환한다.
+[국세청 주택마련저축 안내](https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=239022&mi=40610)
+
+카드 사용액은 일반 신용카드, 일반 직불·현금, 전통시장, 대중교통, 문화비를
+중복 없이 분리해서 입력한다. 총급여 7천만원 초과자는 문화비를 버리지 않고
+실제 결제수단의 일반 공제율로 계산한다. 이때 `culture_credit_card_spending`과
+`culture_debit_cash_spending`의 합계가 `culture_spending`과 같아야 한다.
+이 두 세부 금액은 문화비의 내역이므로 일반 사용액에 다시 더하지 않는다.
+[국세청 카드 공제 산식](https://webtv.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7794&mi=2469)
+
+프로필 금액·나이 등은 음수가 아닌 정수, 여부 값은 JSON 불리언만 허용한다.
+CLI와 MCP 및 직접 Python 호출에 동일한 검증을 적용한다.

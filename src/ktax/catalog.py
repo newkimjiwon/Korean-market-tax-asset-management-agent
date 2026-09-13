@@ -92,6 +92,7 @@ REQUIRED_FIELDS: dict[str, frozenset[str]] = {
     }),
     "payment_method_switch": frozenset({
         "earned_income", "credit_card_spending", "debit_cash_spending",
+        "traditional_market_spending", "public_transit_spending", "culture_spending",
     }),
     "monthly_rent_credit": frozenset({
         "earned_income", "is_homeless_household_head", "annual_rent_paid",
@@ -164,8 +165,8 @@ def housing_subscription(profile: Profile, year: int) -> Evaluation:
     key, title = "housing_subscription", "주택청약종합저축 납입"
     rules = load_ruleset(year)["housing_subscription"]
 
-    if not profile.is_homeless_household_head:
-        return Ineligible(key, title, "무주택 세대주만 공제 대상입니다.")
+    if not (profile.is_homeless_household_head or profile.is_homeless_household_head_spouse):
+        return Ineligible(key, title, "무주택 세대주 또는 그 배우자만 공제 대상입니다.")
     if profile.earned_income > rules["earned_income_ceiling"]:
         return Ineligible(
             key, title,
@@ -194,7 +195,7 @@ def housing_subscription(profile: Profile, year: int) -> Evaluation:
             [
                 f"납입 한도 {rules['annual_contribution_limit']:,}원의 "
                 f"{rules['deduction_rate']:.0%} 소득공제",
-                f"총급여 {rules['earned_income_ceiling']:,}원 이하 무주택 세대주",
+                f"총급여 {rules['earned_income_ceiling']:,}원 이하 무주택 세대주 또는 그 배우자",
             ],
             [
                 "소득공제이므로 절감액은 한계세율에 비례합니다",
@@ -588,7 +589,13 @@ def discover_actions(
     for evaluate in _CATALOG:
         key = evaluate.__name__
         if known is not None:
-            gaps = sorted(REQUIRED_FIELDS.get(key, frozenset()) - known)
+            required = set(REQUIRED_FIELDS.get(key, frozenset()))
+            if key == "housing_subscription" and not profile.is_homeless_household_head:
+                required.add("is_homeless_household_head_spouse")
+            if (key == "payment_method_switch" and profile.earned_income > load_ruleset(year)["credit_card"]["culture_income_ceiling"]
+                    and profile.culture_spending > 0):
+                required.update({"culture_credit_card_spending", "culture_debit_cash_spending"})
+            gaps = sorted(required - known)
             if gaps:
                 indeterminate.append(
                     Indeterminate(key=key, title=_TITLES.get(key, key), missing=gaps)

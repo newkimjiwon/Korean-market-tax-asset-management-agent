@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 
 Won = int
@@ -95,6 +95,7 @@ class Profile:
 
     # 주거
     is_homeless_household_head: bool = False   # 무주택 세대주
+    is_homeless_household_head_spouse: bool = False  # 무주택 세대주의 배우자
     housing_subscription_contributed: Won = 0  # 올해 주택청약종합저축 납입액
     annual_rent_paid: Won = 0                  # 올해 지출한 월세 총액
 
@@ -113,6 +114,8 @@ class Profile:
     traditional_market_spending: Won = 0
     public_transit_spending: Won = 0
     culture_spending: Won = 0                # 도서·공연·박물관·체육시설 등
+    culture_credit_card_spending: Won = 0  # culture_spending 중 신용카드 결제액
+    culture_debit_cash_spending: Won = 0  # culture_spending 중 직불·현금 결제액
     dependent_children: int = 0              # 공제 한도 산정용
 
     # 중소기업 취업자 감면
@@ -121,6 +124,20 @@ class Profile:
 
     # 지평 계산용
     planned_withdrawal_age: int | None = None
+
+    def __post_init__(self) -> None:
+        for item in fields(self):
+            value = getattr(self, item.name)
+            if item.name == "filing_type":
+                if not isinstance(value, FilingType):
+                    raise ValueError("filing_type은 FilingType 값이어야 합니다.")
+            elif type(item.default) is bool:
+                if type(value) is not bool:
+                    raise ValueError(f"{item.name}은 true/false로 입력하세요.")
+            elif value is None and item.name in {"sme_employment_start_year", "planned_withdrawal_age"}:
+                continue
+            elif type(value) is not int or value < 0:
+                raise ValueError(f"{item.name}은 음수가 아닌 정수로 입력하세요.")
 
     @property
     def comprehensive_income(self) -> Won:

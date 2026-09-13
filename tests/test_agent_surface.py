@@ -184,3 +184,13 @@ def test_isa_response_cannot_be_confused_with_salary_settlement():
     assert result["isa_account_tax"] == 396_000
     assert result["benefit"]["starts_in_years"] == 4
     assert not {"annual_saving", "baseline_total", "simulated_total"} & result.keys()
+
+
+@pytest.mark.parametrize("bad", [
+    {"age": True}, {"earned_income": -1}, {"earned_income": "50000000"},
+    {"tax_credits": float("nan")}, {"is_homeless_household_head": "false"},
+    {"dependent_children": -1}, {"isa_contributed_total": 1.5},
+])
+def test_mcp_rejects_malformed_profile_scalars(bad):
+    with pytest.raises(ValueError):
+        recommend_actions({"age": 40, **bad}, YEAR)

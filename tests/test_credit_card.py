@@ -83,17 +83,22 @@ def test_cash_receipt_shares_the_debit_card_rate():
     assert credit_card_deduction(p, YEAR).gross_deductible == 3_000_000
 
 
-def test_culture_spending_ignored_above_income_ceiling():
-    low = spender(earned_income=70_000_000, culture_spending=2_000_000,
-                  credit_card_spending=17_500_000)
-    high = spender(earned_income=70_000_001, culture_spending=2_000_000,
-                   credit_card_spending=17_500_001)
-    assert credit_card_deduction(low, YEAR).gross_deductible > 0
-    # 문화체육이 아예 계산에서 빠지므로 같은 지출이어도 공제대상이 줄어든다
-    assert (
-        credit_card_deduction(high, YEAR).gross_deductible
-        < credit_card_deduction(low, YEAR).gross_deductible
-    )
+@pytest.mark.parametrize("credit,debit,expected", [
+    (2_000_000, 0, 300_000), (0, 2_000_000, 600_000),
+    (1_000_000, 1_000_000, 450_000),
+])
+def test_high_income_culture_uses_actual_payment_method(credit, debit, expected):
+    p = spender(earned_income=80_000_000, credit_card_spending=20_000_000,
+                debit_cash_spending=0, traditional_market_spending=0,
+                public_transit_spending=0, culture_spending=2_000_000,
+                culture_credit_card_spending=credit, culture_debit_cash_spending=debit)
+    assert credit_card_deduction(p, YEAR).gross_deductible == expected
+
+
+def test_high_income_culture_requires_matching_payment_breakdown():
+    p = spender(earned_income=80_000_000, culture_spending=2_000_000)
+    with pytest.raises(ValueError, match="문화비"):
+        credit_card_deduction(p, YEAR)
 
 
 # --------------------------------------------------------------------------

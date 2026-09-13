@@ -194,3 +194,26 @@ def test_credit_saving_capped_by_gross_tax():
 
     p = Profile(age=30, earned_income=15_000_000, income_deductions=14_000_000)
     assert tax_credit_saving(p, YEAR, 50_000_000) < 50_000_000
+
+
+def test_housing_subscription_includes_homeless_heads_spouse():
+    p = young_renter(is_homeless_household_head=False,
+                     is_homeless_household_head_spouse=True)
+    assert found(discover_actions(p, YEAR), "housing_subscription")
+
+
+def test_housing_subscription_asks_spouse_status_before_rejecting():
+    p = young_renter(is_homeless_household_head=False)
+    known = frozenset({"earned_income", "is_homeless_household_head",
+                       "housing_subscription_contributed"})
+    d = discover_actions(p, YEAR, known=known)
+    item = next(i for i in d.indeterminate if i.key == "housing_subscription")
+    assert item.missing == ["is_homeless_household_head_spouse"]
+    assert blocked(d, "housing_subscription") is None
+
+
+def test_card_recommendation_asks_for_special_spending():
+    known = frozenset({"earned_income", "credit_card_spending", "debit_cash_spending"})
+    d = discover_actions(young_renter(), YEAR, known=known)
+    item = next(i for i in d.indeterminate if i.key == "payment_method_switch")
+    assert set(item.missing) == {"culture_spending", "traditional_market_spending", "public_transit_spending"}
